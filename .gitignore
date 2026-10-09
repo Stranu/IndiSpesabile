@@ -1,4 +1,20 @@
+# Dipendenze (non usate: niente build tool, ma per sicurezza)
 node_modules/
+
+# File di sistema
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# Log e temporanei
 *.log
+*.tmp
+*~
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Materiale di lavoro interno (design, prompt, task del workflow) — non parte dell'app
+.agents/
+prompt.txt
