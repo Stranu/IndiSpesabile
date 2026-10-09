@@ -90,6 +90,13 @@ export function render(container) {
     listEl.textContent = '';
     if (items.length === 0) {
       listEl.appendChild(el('div', { class: 'empty' }, 'Nessun desiderio. Aggiungi un prodotto.'));
+      listEl.appendChild(
+        el(
+          'button',
+          { type: 'button', class: 'btn btn-primary empty-cta', onClick: () => input.focus() },
+          'Aggiungi il primo elemento'
+        )
+      );
       return;
     }
     items.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));

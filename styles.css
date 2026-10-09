@@ -556,11 +556,109 @@ select {
   text-align: center;
 }
 
+/* ---------- Add bar ---------- */
+.add-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+}
+
+.add-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.add-row > .autocomplete,
+.add-row > .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.quick-picks {
+  flex-wrap: wrap;
+}
+
+.quick-picks .btn {
+  flex: 1 1 auto;
+}
+
+/* ---------- Segmented control (location picker) ---------- */
+.seg {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.seg-btn {
+  flex: 1 1 0;
+  min-height: var(--tap);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg-btn.active {
+  background: var(--brand);
+  color: var(--on-brand);
+  border-color: var(--brand);
+}
+
+/* ---------- Inline row editors ---------- */
+.row-qty-edit,
+.row-expiry-edit {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.row-expiry-edit .input {
+  width: auto;
+  flex: 1 1 auto;
+}
+
+/* ---------- Modal form field ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--tap);
+  cursor: pointer;
+}
+
 /* ---------- Empty state ---------- */
 .empty {
   text-align: center;
   color: var(--text-muted);
   padding: var(--sp-6) var(--sp-4);
+}
+
+.empty-cta {
+  display: block;
+  margin: var(--sp-4) auto 0;
 }
 
 /* ---------- Dark theme ---------- */

@@ -11,8 +11,9 @@ import {
   ensureWishlistRef,
   mergePantryQuantity,
   toggleRecurring,
+  getOrCreateProduct,
 } from '../store.js';
-import { el, toast, openSheet, openChoice, confirmSheet } from '../ui.js';
+import { el, toast, openSheet, openChoice, confirmSheet, openModal, attachAutocomplete } from '../ui.js';
 
 export function render(container) {
   let query = '';
@@ -38,14 +39,77 @@ export function render(container) {
   });
   const toggleLabel = el('label', { class: 'toggle-label' }, [recurringToggle, el('span', {}, 'Solo ricorrenti')]);
 
+  const addBtn = el(
+    'button',
+    { type: 'button', class: 'btn btn-primary', onClick: () => openAddProduct() },
+    'Aggiungi prodotto'
+  );
+
   const controls = el('div', { class: 'add-bar' }, [
     el('div', { class: 'add-row' }, [searchInput]),
+    el('div', { class: 'add-row' }, [addBtn]),
     el('div', { class: 'add-row' }, [toggleLabel]),
   ]);
 
   const listEl = el('div', { class: 'card list-card' });
   container.appendChild(controls);
   container.appendChild(listEl);
+
+  // --- Add product: name (autocomplete surfaces duplicates) + 'Ricorrente' ---
+  function openAddProduct() {
+    const nameInput = el('input', {
+      type: 'text',
+      class: 'input',
+      placeholder: 'Nome prodotto…',
+      'aria-label': 'Nome prodotto',
+    });
+    const nameWrap = el('div', { class: 'field' }, [
+      el('span', { class: 'field-label' }, 'Nome'),
+      nameInput,
+    ]);
+
+    const recurringCheck = el('input', { type: 'checkbox' });
+    const recurringLabel = el('label', { class: 'toggle-label' }, [
+      recurringCheck,
+      el('span', {}, 'Ricorrente'),
+    ]);
+
+    const content = el('div', {}, [nameWrap, recurringLabel]);
+    const detach = attachAutocomplete(nameInput, {
+      onPick: (product) => {
+        nameInput.value = product.name;
+      },
+      onConfirmNew: () => {},
+    });
+
+    openModal({
+      title: 'Nuovo prodotto',
+      content,
+      actions: [
+        { label: 'Annulla', onClick: (close) => { detach(); close(); } },
+        {
+          label: 'Aggiungi',
+          primary: true,
+          onClick: async (close) => {
+            const name = nameInput.value.trim();
+            if (name === '') {
+              toast('Inserisci un nome', 'info');
+              return;
+            }
+            const product = await getOrCreateProduct(name);
+            if (recurringCheck.checked && product.recurring !== true) {
+              await toggleRecurring(product.id);
+            }
+            detach();
+            close();
+            toast('Prodotto aggiunto', 'success');
+          },
+        },
+      ],
+    });
+
+    nameInput.focus();
+  }
 
   async function openRowMenu(product) {
     const choice = await openSheet({
@@ -107,6 +171,13 @@ export function render(container) {
     listEl.textContent = '';
     if (products.length === 0) {
       listEl.appendChild(el('div', { class: 'empty' }, 'Nessun prodotto.'));
+      listEl.appendChild(
+        el(
+          'button',
+          { type: 'button', class: 'btn btn-primary empty-cta', onClick: () => openAddProduct() },
+          'Aggiungi il primo elemento'
+        )
+      );
       return;
     }
 

@@ -195,6 +195,13 @@ export function render(container) {
 
     if (voices.length === 0) {
       listEl.appendChild(el('div', { class: 'empty' }, 'La lista è vuota. Aggiungi un prodotto.'));
+      listEl.appendChild(
+        el(
+          'button',
+          { type: 'button', class: 'btn btn-primary empty-cta', onClick: () => input.focus() },
+          'Aggiungi il primo elemento'
+        )
+      );
       return;
     }
 

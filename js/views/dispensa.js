@@ -14,7 +14,7 @@ import {
   ensureListRef,
   ensureWishlistRef,
 } from '../store.js';
-import { el, toast, openSheet, openChoice, attachAutocomplete, qtyEditor } from '../ui.js';
+import { el, toast, openSheet, openModal, attachAutocomplete, qtyEditor } from '../ui.js';
 import { formatQty } from '../units.js';
 
 const TABS = [
@@ -34,24 +34,90 @@ export function render(container) {
     'aria-label': 'Aggiungi un prodotto alla dispensa',
   });
 
-  async function addToPantry(product) {
-    const where = await openChoice('Frigo o Dispensa?', ['Frigo', 'Dispensa']);
-    if (!where) return;
-    const location = where === 'Frigo' ? 'frigo' : 'dispensa';
-    const result = await mergePantryQuantity(location, product.id, null, null);
-    input.value = '';
-    if (result && result.merged === false && result.items.length === 2) {
-      toast('Unità diverse: tengo le voci separate', 'info');
-    } else {
-      toast('Aggiunto in dispensa', 'success');
+  // Open the add form for a resolved product. Collects location (Frigo/Dispensa),
+  // optional quantity, and an optional expiry date, then merges via the store.
+  function openAddForm(product) {
+    // Default location = active tab unless 'tutti', then 'frigo'.
+    let location = activeTab === 'dispensa' ? 'dispensa' : 'frigo';
+
+    const nameLine = el('div', { class: 'field' }, [
+      el('span', { class: 'field-label' }, 'Prodotto'),
+      el('div', { class: 'row-title' }, product.name),
+    ]);
+
+    const frigoBtn = el('button', { type: 'button', class: 'seg-btn' }, 'Frigo');
+    const dispensaBtn = el('button', { type: 'button', class: 'seg-btn' }, 'Dispensa');
+    function syncSeg() {
+      frigoBtn.classList.toggle('active', location === 'frigo');
+      dispensaBtn.classList.toggle('active', location === 'dispensa');
     }
+    frigoBtn.addEventListener('click', () => {
+      location = 'frigo';
+      syncSeg();
+    });
+    dispensaBtn.addEventListener('click', () => {
+      location = 'dispensa';
+      syncSeg();
+    });
+    syncSeg();
+    const locField = el('div', { class: 'field' }, [
+      el('span', { class: 'field-label' }, 'Posizione'),
+      el('div', { class: 'seg' }, [frigoBtn, dispensaBtn]),
+    ]);
+
+    const addQty = qtyEditor({});
+    const qtyField = el('div', { class: 'field' }, [
+      el('span', { class: 'field-label' }, 'Quantità'),
+      addQty.element,
+    ]);
+
+    const dateInput = el('input', {
+      type: 'date',
+      class: 'input',
+      'aria-label': 'Scadenza',
+    });
+    const expiryField = el('div', { class: 'field' }, [
+      el('span', { class: 'field-label' }, 'Scadenza (facoltativa)'),
+      dateInput,
+    ]);
+
+    const content = el('div', {}, [nameLine, locField, qtyField, expiryField]);
+
+    openModal({
+      title: 'Aggiungi alla dispensa',
+      content,
+      actions: [
+        { label: 'Annulla', onClick: (close) => close() },
+        {
+          label: 'Aggiungi',
+          primary: true,
+          onClick: async (close) => {
+            const { qtyValue, qtyUnit } = addQty.read();
+            const expiry = dateInput.value || null;
+            const result = await mergePantryQuantity(location, product.id, qtyValue, qtyUnit);
+            if (expiry != null && result && result.items.length) {
+              // The just-created/updated entry is the last element of result.items.
+              const entry = result.items[result.items.length - 1];
+              await updatePantryItem(entry.id, { expiry });
+            }
+            input.value = '';
+            close();
+            if (result && result.merged === false && result.items.length === 2) {
+              toast('Unità diverse: tengo le voci separate', 'info');
+            } else {
+              toast('Aggiunto in dispensa', 'success');
+            }
+          },
+        },
+      ],
+    });
   }
 
   const detachAuto = attachAutocomplete(input, {
-    onPick: (product) => addToPantry(product),
+    onPick: (product) => openAddForm(product),
     onConfirmNew: async (name) => {
       const product = await getOrCreateProduct(name);
-      await addToPantry(product);
+      openAddForm(product);
     },
   });
 
@@ -190,6 +256,13 @@ export function render(container) {
     listEl.textContent = '';
     if (items.length === 0) {
       listEl.appendChild(el('div', { class: 'empty' }, 'Niente qui. Aggiungi un prodotto.'));
+      listEl.appendChild(
+        el(
+          'button',
+          { type: 'button', class: 'btn btn-primary empty-cta', onClick: () => input.focus() },
+          'Aggiungi il primo elemento'
+        )
+      );
       return;
     }
 
