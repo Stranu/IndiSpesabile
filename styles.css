@@ -1,4 +1,4 @@
-/* Spesa — app shell styles (design §9) */
+/* IndiSpesabile — app shell styles (mobile-first, thumb-friendly) */
 
 :root {
   /* Brand palette */
@@ -49,6 +49,7 @@
 
   --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.12);
   --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.18);
+  --shadow-fab: 0 6px 16px rgba(46, 125, 91, 0.4);
 }
 
 * {
@@ -81,9 +82,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-3);
+  gap: var(--sp-2);
   padding-left: var(--sp-4);
-  padding-right: var(--sp-4);
+  padding-right: var(--sp-3);
   background: var(--brand);
   color: var(--on-brand);
   box-shadow: var(--shadow-1);
@@ -95,6 +96,7 @@ body {
   font-weight: 700;
   margin: 0;
   letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 .header-actions {
@@ -110,6 +112,9 @@ body {
   background: rgba(255, 255, 255, 0.18);
   color: var(--on-brand);
   white-space: nowrap;
+  max-width: 36vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sync-chip[data-state="ok"] {
@@ -120,45 +125,40 @@ body {
   background: var(--danger);
 }
 
-.btn-sync {
-  min-height: var(--tap);
-  min-width: var(--tap);
-  padding: 0 var(--sp-3);
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--on-brand);
-  color: var(--brand-dark);
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-sync:active {
-  transform: scale(0.96);
-}
-
+/* Header icon buttons: sync + settings, same round transparent style */
+.btn-sync,
 .btn-settings {
   min-height: var(--tap);
   min-width: var(--tap);
-  padding: 0 var(--sp-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: none;
   border-radius: var(--radius-pill);
-  background: var(--on-brand);
-  color: var(--brand-dark);
-  font-size: 1.1rem;
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--on-brand);
+  font-size: 1.15rem;
   line-height: 1;
   cursor: pointer;
+  transition: background 120ms ease, transform 80ms ease;
 }
 
+.btn-sync {
+  font-size: 1rem;
+}
+
+.btn-sync:active,
 .btn-settings:active {
-  transform: scale(0.96);
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* ---------- Main view ---------- */
 .app-view {
   padding: var(--sp-4);
   padding-top: calc(var(--header-h) + env(safe-area-inset-top) + var(--sp-4));
-  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--sp-4));
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--sp-5));
   min-height: 100vh;
 }
 
@@ -191,11 +191,13 @@ body {
   font-size: 0.7rem;
   cursor: pointer;
   padding: var(--sp-1);
+  transition: color 120ms ease;
 }
 
 .nav-icon {
   font-size: 1.3rem;
   line-height: 1;
+  transition: transform 120ms ease;
 }
 
 .nav-label {
@@ -207,7 +209,7 @@ body {
 }
 
 .nav-btn.active .nav-icon {
-  transform: translateY(-1px);
+  transform: translateY(-2px) scale(1.08);
 }
 
 .nav-btn:active {
@@ -231,6 +233,11 @@ select {
   color: var(--text);
   font-weight: 600;
   cursor: pointer;
+  transition: transform 80ms ease, background 120ms ease;
+}
+
+.btn:active {
+  transform: scale(0.97);
 }
 
 .btn-primary {
@@ -263,12 +270,44 @@ select {
   border-color: var(--brand);
 }
 
+/* ---------- Floating action button (+) ---------- */
+.fab {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--sp-4));
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--brand);
+  color: var(--on-brand);
+  box-shadow: var(--shadow-fab);
+  cursor: pointer;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 100ms ease, box-shadow 120ms ease;
+}
+
+.fab:active {
+  transform: scale(0.9);
+}
+
+.fab-plus {
+  font-size: 2rem;
+  line-height: 1;
+  font-weight: 300;
+  margin-top: -2px;
+}
+
 /* ---------- Cards / rows ---------- */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-1);
+  overflow: hidden;
 }
 
 .row {
@@ -278,6 +317,7 @@ select {
   padding: var(--sp-3) var(--sp-4);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  min-height: 60px;
 }
 
 .row:last-child {
@@ -287,6 +327,9 @@ select {
 .row-main {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .row-title {
@@ -296,9 +339,22 @@ select {
   white-space: nowrap;
 }
 
-.row-sub {
-  font-size: 0.8rem;
+.row-title.orphaned {
+  font-style: italic;
   color: var(--text-muted);
+  font-weight: 500;
+}
+
+.row-sub {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.row-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: 2px;
 }
 
 .row.bought .row-title {
@@ -306,14 +362,35 @@ select {
   color: var(--text-muted);
 }
 
+.row.bought {
+  opacity: 0.75;
+}
+
+/* ---------- Tags ---------- */
+.tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.tag.recurring {
+  background: var(--brand-light);
+  color: var(--brand-dark);
+}
+
 /* ---------- Kebab (3 dots) ---------- */
 .kebab-btn {
+  flex: 0 0 auto;
   min-width: var(--tap);
   min-height: var(--tap);
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
   border-radius: var(--radius-pill);
@@ -355,12 +432,14 @@ select {
 }
 
 .qty-editor .qty-value {
-  width: 5.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .qty-editor .qty-unit {
+  flex: 0 0 auto;
   width: auto;
-  min-width: 4.5rem;
+  min-width: 5rem;
 }
 
 /* ---------- Autocomplete ---------- */
@@ -375,13 +454,13 @@ select {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--shadow-2);
   max-height: 240px;
   overflow-y: auto;
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 30;
+  z-index: 40;
 }
 
 .autocomplete-list:empty {
@@ -415,7 +494,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  z-index: 60;
+  z-index: 70;
   width: calc(100% - 2 * var(--sp-4));
   max-width: 420px;
   pointer-events: none;
@@ -484,7 +563,7 @@ select {
   background: var(--surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-2);
-  padding: var(--sp-4);
+  padding: var(--sp-5);
   animation: modal-in 180ms ease-out;
 }
 
@@ -501,8 +580,8 @@ select {
 }
 
 .modal-title {
-  margin: 0 0 var(--sp-3);
-  font-size: 1.05rem;
+  margin: 0 0 var(--sp-4);
+  font-size: 1.1rem;
 }
 
 .modal-actions {
@@ -510,6 +589,10 @@ select {
   justify-content: flex-end;
   gap: var(--sp-2);
   margin-top: var(--sp-4);
+}
+
+.modal-actions .btn {
+  flex: 1 1 0;
 }
 
 /* Action sheet / popover: slides from bottom */
@@ -573,75 +656,86 @@ select {
   text-align: center;
 }
 
-/* ---------- Add bar ---------- */
-.add-bar {
+/* ---------- Segmented control (filter tabs + location picker) ---------- */
+.segmented {
+  display: flex;
+  gap: 0;
+  margin-bottom: var(--sp-4);
+  padding: 4px;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+}
+
+.segmented-inline {
+  margin-bottom: 0;
+}
+
+.segmented-btn {
+  flex: 1 1 0;
+  min-height: 38px;
+  padding: 0 var(--sp-3);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.segmented-btn.active {
+  background: var(--surface);
+  color: var(--brand);
+  box-shadow: var(--shadow-1);
+}
+
+/* ---------- Search bar (Prodotti) ---------- */
+.search-bar {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
   margin-bottom: var(--sp-4);
-  padding: var(--sp-3);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-1);
 }
 
-.add-row {
+.filter-row {
   display: flex;
-  align-items: center;
   gap: var(--sp-2);
-}
-
-.add-row > .autocomplete,
-.add-row > .input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.quick-picks {
   flex-wrap: wrap;
 }
 
-.quick-picks .btn {
-  flex: 1 1 auto;
-}
-
-/* ---------- Segmented control (location picker) ---------- */
-.seg {
-  display: flex;
-  gap: var(--sp-2);
-}
-
-.seg-btn {
-  flex: 1 1 0;
-  min-height: var(--tap);
+.filter-chip {
+  min-height: 36px;
   padding: 0 var(--sp-3);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-pill);
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-muted);
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
 
-.seg-btn.active {
-  background: var(--brand);
-  color: var(--on-brand);
+.filter-chip.active {
+  background: var(--brand-light);
+  color: var(--brand-dark);
   border-color: var(--brand);
 }
 
-/* ---------- Inline row editors ---------- */
-.row-qty-edit,
-.row-expiry-edit {
+/* ---------- Quick-pick chips (inside the Spesa add panel) ---------- */
+.chip-row {
   display: flex;
-  align-items: center;
   gap: var(--sp-2);
-  margin-top: var(--sp-2);
+  flex-wrap: wrap;
 }
 
-.row-expiry-edit .input {
-  width: auto;
+.chip-btn {
   flex: 1 1 auto;
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  font-size: 0.9rem;
 }
 
 /* ---------- Modal form field ---------- */
@@ -649,7 +743,11 @@ select {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  margin-bottom: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.field:last-child {
+  margin-bottom: 0;
 }
 
 .field-label {
@@ -671,11 +769,52 @@ select {
   text-align: center;
   color: var(--text-muted);
   padding: var(--sp-6) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
 }
 
-.empty-cta {
-  display: block;
-  margin: var(--sp-4) auto 0;
+.empty p {
+  margin: 0;
+}
+
+.empty-icon {
+  font-size: 2.6rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+/* ---------- Auth / settings panel ---------- */
+.auth-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.auth-account {
+  font-weight: 600;
+  padding: var(--sp-2) 0;
+  word-break: break-all;
+}
+
+.auth-info {
+  font-size: 0.85rem;
+  color: var(--brand-dark);
+  min-height: 0;
+}
+
+.auth-info:empty {
+  display: none;
+}
+
+.auth-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.auth-actions .btn {
+  flex: 1 1 0;
 }
 
 /* ---------- Dark theme ---------- */
@@ -704,6 +843,7 @@ select {
 
     --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.5);
     --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.6);
+    --shadow-fab: 0 6px 16px rgba(0, 0, 0, 0.6);
   }
 
   .toast {

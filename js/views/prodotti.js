@@ -1,6 +1,6 @@
 // js/views/prodotti.js — Catalog view (design §8, decision D2).
-// Lists all live products; search by nameLower.includes + 'solo ricorrenti' toggle.
-// 'Elimina' -> confirmSheet -> deleteProductCascade (D2). All Italian.
+// Search bar (filters the catalog) + 'Solo ricorrenti' chip. Add a product via the
+// floating "+". 'Elimina' -> confirmSheet -> deleteProductCascade (D2). All Italian.
 
 import * as db from '../db.js';
 import {
@@ -13,12 +13,13 @@ import {
   toggleRecurring,
   getOrCreateProduct,
 } from '../store.js';
-import { el, toast, openSheet, openChoice, confirmSheet, openModal, attachAutocomplete } from '../ui.js';
+import { el, toast, openSheet, openChoice, confirmSheet, openModal, fab } from '../ui.js';
 
 export function render(container) {
   let query = '';
   let onlyRecurring = false;
 
+  // --- Search bar (this input IS a search, not an add) ---
   const searchInput = el('input', {
     type: 'search',
     class: 'input',
@@ -30,37 +31,41 @@ export function render(container) {
     },
   });
 
-  const recurringToggle = el('input', {
-    type: 'checkbox',
-    onChange: (e) => {
-      onlyRecurring = e.target.checked;
-      renderList();
-    },
-  });
-  const toggleLabel = el('label', { class: 'toggle-label' }, [recurringToggle, el('span', {}, 'Solo ricorrenti')]);
-
-  const addBtn = el(
+  const recurringChip = el(
     'button',
-    { type: 'button', class: 'btn btn-primary', onClick: () => openAddProduct() },
-    'Aggiungi prodotto'
+    {
+      type: 'button',
+      class: 'filter-chip',
+      'aria-pressed': 'false',
+      onClick: () => {
+        onlyRecurring = !onlyRecurring;
+        recurringChip.classList.toggle('active', onlyRecurring);
+        recurringChip.setAttribute('aria-pressed', String(onlyRecurring));
+        renderList();
+      },
+    },
+    '🔁 Solo ricorrenti'
   );
 
-  const controls = el('div', { class: 'add-bar' }, [
-    el('div', { class: 'add-row' }, [searchInput]),
-    el('div', { class: 'add-row' }, [addBtn]),
-    el('div', { class: 'add-row' }, [toggleLabel]),
+  const controls = el('div', { class: 'search-bar' }, [
+    el('div', { class: 'search-row' }, [searchInput]),
+    el('div', { class: 'filter-row' }, [recurringChip]),
   ]);
 
   const listEl = el('div', { class: 'card list-card' });
   container.appendChild(controls);
   container.appendChild(listEl);
 
-  // --- Add product: name (autocomplete surfaces duplicates) + 'Ricorrente' ---
+  const addFab = fab({ label: 'Nuovo prodotto', onClick: openAddProduct });
+  container.appendChild(addFab);
+
+  // --- Add product: name + 'Ricorrente' flag ---
   function openAddProduct() {
     const nameInput = el('input', {
       type: 'text',
       class: 'input',
       placeholder: 'Nome prodotto…',
+      autocomplete: 'off',
       'aria-label': 'Nome prodotto',
     });
     const nameWrap = el('div', { class: 'field' }, [
@@ -71,22 +76,16 @@ export function render(container) {
     const recurringCheck = el('input', { type: 'checkbox' });
     const recurringLabel = el('label', { class: 'toggle-label' }, [
       recurringCheck,
-      el('span', {}, 'Ricorrente'),
+      el('span', {}, 'Ricorrente (preferito)'),
     ]);
 
     const content = el('div', {}, [nameWrap, recurringLabel]);
-    const { detach } = attachAutocomplete(nameInput, {
-      onPick: (product) => {
-        nameInput.value = product.name;
-      },
-      onConfirmNew: () => {},
-    });
 
     openModal({
       title: 'Nuovo prodotto',
       content,
       actions: [
-        { label: 'Annulla', onClick: (close) => { detach(); close(); } },
+        { label: 'Annulla', onClick: (close) => close() },
         {
           label: 'Aggiungi',
           primary: true,
@@ -100,7 +99,6 @@ export function render(container) {
             if (recurringCheck.checked && product.recurring !== true) {
               await toggleRecurring(product.id);
             }
-            detach();
             close();
             toast('Prodotto aggiunto', 'success');
           },
@@ -118,7 +116,7 @@ export function render(container) {
         { label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' },
         { label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' },
         { label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' },
-        { label: product.recurring ? 'Togli dai ricorrenti' : 'Ricorrenti', icon: '🔁', value: 'recurring' },
+        { label: product.recurring ? 'Togli dai ricorrenti' : 'Aggiungi ai ricorrenti', icon: '🔁', value: 'recurring' },
         { label: 'Elimina', icon: '🗑️', value: 'delete', danger: true },
       ],
     });
@@ -141,6 +139,7 @@ export function render(container) {
       }
     } else if (choice === 'recurring') {
       await toggleRecurring(product.id);
+      toast(product.recurring ? 'Rimosso dai ricorrenti' : 'Aggiunto ai ricorrenti', 'success');
     } else if (choice === 'delete') {
       const ok = await confirmSheet(`Elimina «${product.name}» e le sue voci?`, { okLabel: 'Elimina', danger: true });
       if (ok) {
@@ -153,7 +152,9 @@ export function render(container) {
   function buildRow(product) {
     const title = el('div', { class: 'row-title' }, product.name);
     const main = el('div', { class: 'row-main' }, [title]);
-    if (product.recurring) main.appendChild(el('div', { class: 'row-sub' }, 'Ricorrente'));
+    if (product.recurring) {
+      main.appendChild(el('div', { class: 'row-chips' }, [el('span', { class: 'tag recurring' }, '🔁 Ricorrente')]));
+    }
     const kebab = el(
       'button',
       { type: 'button', class: 'kebab-btn', 'aria-label': 'Azioni', onClick: () => openRowMenu(product) },
@@ -170,13 +171,13 @@ export function render(container) {
 
     listEl.textContent = '';
     if (products.length === 0) {
-      listEl.appendChild(el('div', { class: 'empty' }, 'Nessun prodotto.'));
+      const emptyMsg = query || onlyRecurring ? 'Nessun prodotto trovato.' : 'Nessun prodotto.';
       listEl.appendChild(
-        el(
-          'button',
-          { type: 'button', class: 'btn btn-primary empty-cta', onClick: () => openAddProduct() },
-          'Aggiungi il primo elemento'
-        )
+        el('div', { class: 'empty' }, [
+          el('div', { class: 'empty-icon', 'aria-hidden': 'true' }, '📋'),
+          el('p', {}, emptyMsg),
+          el('button', { type: 'button', class: 'btn btn-primary', onClick: openAddProduct }, 'Aggiungi un prodotto'),
+        ])
       );
       return;
     }

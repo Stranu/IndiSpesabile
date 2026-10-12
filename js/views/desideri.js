@@ -1,5 +1,6 @@
 // js/views/desideri.js — Wishlist view (design §8).
-// Typed add -> getOrCreateProduct -> ensureWishlistRef (dedupes one live entry per product).
+// Add via a floating "+" that opens a panel (name + autocomplete) ->
+// getOrCreateProduct -> ensureWishlistRef (dedupes one live entry per product).
 // Orphaned-ref rows render '(prodotto eliminato)'. All Italian.
 
 import * as db from '../db.js';
@@ -12,34 +13,45 @@ import {
   removeWishlistItem,
   mergePantryQuantity,
 } from '../store.js';
-import { el, toast, openSheet, openChoice, attachAutocomplete } from '../ui.js';
+import { el, toast, openSheet, openChoice, openModal, nameField, fab } from '../ui.js';
 
 export function render(container) {
-  const input = el('input', {
-    type: 'text',
-    class: 'input',
-    placeholder: 'Aggiungi ai desideri…',
-    'aria-label': 'Aggiungi un prodotto ai desideri',
-  });
-
-  async function addWish(product) {
-    await ensureWishlistRef(product.id);
-    input.value = '';
-    toast('Aggiunto ai desideri', 'success');
-  }
-
-  const auto = attachAutocomplete(input, {
-    onPick: (product) => addWish(product),
-    onConfirmNew: async (name) => {
-      const product = await getOrCreateProduct(name);
-      await addWish(product);
-    },
-  });
-
-  const addBar = el('div', { class: 'add-bar' }, [el('div', { class: 'add-row' }, [auto.element])]);
   const listEl = el('div', { class: 'card list-card' });
-  container.appendChild(addBar);
   container.appendChild(listEl);
+
+  const addFab = fab({ label: 'Aggiungi ai desideri', onClick: openAddForm });
+  container.appendChild(addFab);
+
+  function openAddForm() {
+    const name = nameField({ label: 'Prodotto', placeholder: 'Es. Cioccolato fondente…' });
+    const content = el('div', {}, [name.element]);
+
+    const modal = openModal({
+      title: 'Aggiungi ai desideri',
+      content,
+      actions: [
+        { label: 'Annulla', onClick: (c) => { name.detach(); c(); } },
+        {
+          label: 'Aggiungi',
+          primary: true,
+          onClick: async (c) => {
+            const typed = name.value();
+            if (typed === '') {
+              toast('Inserisci un nome', 'info');
+              return;
+            }
+            const product = await getOrCreateProduct(typed);
+            await ensureWishlistRef(product.id);
+            name.detach();
+            c();
+            toast('Aggiunto ai desideri', 'success');
+          },
+        },
+      ],
+    });
+    name.inputEl.focus();
+    return modal;
+  }
 
   async function openRowMenu(item, product) {
     const orphaned = product === undefined;
@@ -89,13 +101,12 @@ export function render(container) {
     const items = await getAllWishlist();
     listEl.textContent = '';
     if (items.length === 0) {
-      listEl.appendChild(el('div', { class: 'empty' }, 'Nessun desiderio. Aggiungi un prodotto.'));
       listEl.appendChild(
-        el(
-          'button',
-          { type: 'button', class: 'btn btn-primary empty-cta', onClick: () => input.focus() },
-          'Aggiungi il primo elemento'
-        )
+        el('div', { class: 'empty' }, [
+          el('div', { class: 'empty-icon', 'aria-hidden': 'true' }, '⭐'),
+          el('p', {}, 'Nessun desiderio.'),
+          el('button', { type: 'button', class: 'btn btn-primary', onClick: openAddForm }, 'Aggiungi un prodotto'),
+        ])
       );
       return;
     }
@@ -115,7 +126,6 @@ export function render(container) {
   return {
     destroy() {
       unsubscribe();
-      auto.detach();
     },
   };
 }

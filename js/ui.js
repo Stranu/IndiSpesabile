@@ -300,6 +300,24 @@ export function attachAutocomplete(inputEl, { onPick, onConfirmNew }) {
   return { element: wrap, detach };
 }
 
+// ----- fab({label, onClick}) — floating "+" action button --------------------
+// Returns the button element. Fixed bottom-right above the nav; 56px round, large +.
+export function fab({ label = 'Aggiungi', onClick } = {}) {
+  return el(
+    'button',
+    {
+      type: 'button',
+      class: 'fab',
+      'aria-label': label,
+      title: label,
+      onClick: (e) => {
+        if (typeof onClick === 'function') onClick(e);
+      },
+    },
+    el('span', { class: 'fab-plus', 'aria-hidden': 'true' }, '+')
+  );
+}
+
 // ----- qtyEditor({value, unit}) ------------------------------------------------
 // Returns { element, read():{qtyValue, qtyUnit} }. Numeric field accepts Italian
 // comma via units.parseDecimal; unit <select> of UNITS.
@@ -332,5 +350,39 @@ export function qtyEditor({ value = null, unit = null } = {}) {
       if (parsed == null) return { qtyValue: null, qtyUnit: null };
       return { qtyValue: parsed, qtyUnit: unitSelect.value };
     },
+  };
+}
+
+// ----- nameField({label, placeholder, onPick}) --------------------------------
+// A labelled name input with product autocomplete wired in. Returns
+// { element, inputEl, detach, value() }. onPick(product) fires when a suggestion
+// is tapped (the caller may prefill the input). The typed text is read via value().
+export function nameField({ label = 'Nome', placeholder = 'Nome prodotto…', onPick } = {}) {
+  const inputEl = el('input', {
+    type: 'text',
+    class: 'input',
+    placeholder,
+    autocomplete: 'off',
+    'aria-label': label,
+  });
+  const auto = attachAutocomplete(inputEl, {
+    onPick: (product) => {
+      inputEl.value = product.name;
+      if (typeof onPick === 'function') onPick(product);
+    },
+    onConfirmNew: () => {
+      // In a form, confirming via Enter should NOT submit on its own; the form has
+      // its own primary action. We just keep the typed text.
+    },
+  });
+  const element = el('div', { class: 'field' }, [
+    el('span', { class: 'field-label' }, label),
+    auto.element,
+  ]);
+  return {
+    element,
+    inputEl,
+    detach: auto.detach,
+    value: () => inputEl.value.trim(),
   };
 }

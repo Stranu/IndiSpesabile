@@ -1,6 +1,8 @@
 // js/views/dispensa.js — Pantry view (design §8).
-// Filter tabs Frigo | Dispensa (+ Tutti). Expiry classification via store.daysUntil (no
-// string arithmetic). Orphaned-ref rows render '(prodotto eliminato)'. All Italian.
+// Segmented filter Frigo | Dispensa | Tutti. Add via a floating "+" that opens a panel
+// (name + autocomplete, location, optional quantity, optional expiry). Row quantity/expiry
+// are edited from the kebab ("Modifica"), not inline. Expiry classification via daysUntil.
+// Orphaned-ref rows render '(prodotto eliminato)'. All Italian.
 
 import * as db from '../db.js';
 import {
@@ -14,7 +16,7 @@ import {
   ensureListRef,
   ensureWishlistRef,
 } from '../store.js';
-import { el, toast, openSheet, openModal, attachAutocomplete, qtyEditor } from '../ui.js';
+import { el, toast, openSheet, openModal, qtyEditor, nameField, fab } from '../ui.js';
 import { formatQty } from '../units.js';
 
 const TABS = [
@@ -26,82 +28,84 @@ const TABS = [
 export function render(container) {
   let activeTab = 'frigo'; // default Frigo
 
-  // --- Add bar: typed input + autocomplete, then frigo/dispensa choice ---
-  const input = el('input', {
-    type: 'text',
-    class: 'input',
-    placeholder: 'Aggiungi alla dispensa…',
-    'aria-label': 'Aggiungi un prodotto alla dispensa',
+  // --- Segmented filter ---
+  const tabsEl = el('div', { class: 'segmented' });
+  TABS.forEach((t) => {
+    const btn = el(
+      'button',
+      {
+        type: 'button',
+        class: `segmented-btn${activeTab === t.value ? ' active' : ''}`,
+        dataset: { tab: t.value },
+        onClick: () => {
+          activeTab = t.value;
+          Array.from(tabsEl.children).forEach((c) =>
+            c.classList.toggle('active', c.getAttribute('data-tab') === t.value)
+          );
+          renderList();
+        },
+      },
+      t.label
+    );
+    tabsEl.appendChild(btn);
   });
 
-  // Open the add form for a resolved product. Collects location (Frigo/Dispensa),
-  // optional quantity, and an optional expiry date, then merges via the store.
-  function openAddForm(product) {
-    // Default location = active tab unless 'tutti', then 'frigo'.
-    let location = activeTab === 'dispensa' ? 'dispensa' : 'frigo';
+  const listEl = el('div', { class: 'card list-card' });
+  container.appendChild(tabsEl);
+  container.appendChild(listEl);
 
-    const nameLine = el('div', { class: 'field' }, [
-      el('span', { class: 'field-label' }, 'Prodotto'),
-      el('div', { class: 'row-title' }, product.name),
-    ]);
+  const addFab = fab({ label: 'Aggiungi alla dispensa', onClick: () => openAddForm() });
+  container.appendChild(addFab);
 
-    const frigoBtn = el('button', { type: 'button', class: 'seg-btn' }, 'Frigo');
-    const dispensaBtn = el('button', { type: 'button', class: 'seg-btn' }, 'Dispensa');
-    function syncSeg() {
-      frigoBtn.classList.toggle('active', location === 'frigo');
-      dispensaBtn.classList.toggle('active', location === 'dispensa');
-    }
-    frigoBtn.addEventListener('click', () => {
-      location = 'frigo';
-      syncSeg();
-    });
-    dispensaBtn.addEventListener('click', () => {
-      location = 'dispensa';
-      syncSeg();
-    });
-    syncSeg();
-    const locField = el('div', { class: 'field' }, [
-      el('span', { class: 'field-label' }, 'Posizione'),
-      el('div', { class: 'seg' }, [frigoBtn, dispensaBtn]),
-    ]);
+  // --- Add / edit panel.
+  // mode 'add': resolves a product from a typed name, then merges into the pantry.
+  // mode 'edit': edits quantity + expiry of an existing pantry item in place.
+  function openAddForm() {
+    const defaultLocation = activeTab === 'dispensa' ? 'dispensa' : 'frigo';
+    const name = nameField({ label: 'Prodotto', placeholder: 'Es. Yogurt, Riso…' });
 
-    const addQty = qtyEditor({});
+    let location = defaultLocation;
+    const { field: locField, read: readLocation } = buildLocationSeg(location, (l) => { location = l; });
+
+    const qty = qtyEditor({});
     const qtyField = el('div', { class: 'field' }, [
-      el('span', { class: 'field-label' }, 'Quantità'),
-      addQty.element,
+      el('span', { class: 'field-label' }, 'Quantità (facoltativa)'),
+      qty.element,
     ]);
 
-    const dateInput = el('input', {
-      type: 'date',
-      class: 'input',
-      'aria-label': 'Scadenza',
-    });
+    const dateInput = el('input', { type: 'date', class: 'input', 'aria-label': 'Scadenza' });
     const expiryField = el('div', { class: 'field' }, [
       el('span', { class: 'field-label' }, 'Scadenza (facoltativa)'),
       dateInput,
     ]);
 
-    const content = el('div', {}, [nameLine, locField, qtyField, expiryField]);
+    const content = el('div', {}, [name.element, locField, qtyField, expiryField]);
 
-    openModal({
+    const modal = openModal({
       title: 'Aggiungi alla dispensa',
       content,
       actions: [
-        { label: 'Annulla', onClick: (close) => close() },
+        { label: 'Annulla', onClick: (c) => { name.detach(); c(); } },
         {
           label: 'Aggiungi',
           primary: true,
-          onClick: async (close) => {
-            const { qtyValue, qtyUnit } = addQty.read();
+          onClick: async (c) => {
+            const typed = name.value();
+            if (typed === '') {
+              toast('Inserisci un nome', 'info');
+              return;
+            }
+            const product = await getOrCreateProduct(typed);
+            const loc = readLocation();
+            const { qtyValue, qtyUnit } = qty.read();
             const expiry = dateInput.value || null;
-            const result = await mergePantryQuantity(location, product.id, qtyValue, qtyUnit);
+            const result = await mergePantryQuantity(loc, product.id, qtyValue, qtyUnit);
             if (expiry != null && result && result.items.length) {
-              // The just-created/updated entry is the last element of result.items.
               const entry = result.items[result.items.length - 1];
               await updatePantryItem(entry.id, { expiry });
             }
-            input.value = '';
-            close();
+            name.detach();
+            c();
             if (result && result.merged === false && result.items.length === 2) {
               toast('Unità diverse: tengo le voci separate', 'info');
             } else {
@@ -111,44 +115,67 @@ export function render(container) {
         },
       ],
     });
+    name.inputEl.focus();
+    return modal;
   }
 
-  const auto = attachAutocomplete(input, {
-    onPick: (product) => openAddForm(product),
-    onConfirmNew: async (name) => {
-      const product = await getOrCreateProduct(name);
-      openAddForm(product);
-    },
-  });
+  // Edit an existing pantry item's quantity + expiry (location stays fixed).
+  function openEditForm(item, product) {
+    const qty = qtyEditor({ value: item.qtyValue, unit: item.qtyUnit });
+    const dateInput = el('input', { type: 'date', class: 'input', value: item.expiry || '', 'aria-label': 'Scadenza' });
 
-  const addBar = el('div', { class: 'add-bar' }, [el('div', { class: 'add-row' }, [auto.element])]);
+    const content = el('div', {}, [
+      el('div', { class: 'field' }, [
+        el('span', { class: 'field-label' }, 'Prodotto'),
+        el('div', { class: 'row-title' }, product ? product.name : '(prodotto eliminato)'),
+      ]),
+      el('div', { class: 'field' }, [
+        el('span', { class: 'field-label' }, 'Quantità'),
+        qty.element,
+      ]),
+      el('div', { class: 'field' }, [
+        el('span', { class: 'field-label' }, 'Scadenza'),
+        dateInput,
+      ]),
+    ]);
 
-  // --- Filter tabs ---
-  const tabsEl = el('div', { class: 'tabs' });
-  TABS.forEach((t) => {
-    const btn = el(
-      'button',
-      {
-        type: 'button',
-        class: `tab${activeTab === t.value ? ' active' : ''}`,
-        onClick: () => {
-          activeTab = t.value;
-          Array.from(tabsEl.children).forEach((c) =>
-            c.classList.toggle('active', c.getAttribute('data-tab') === t.value)
-          );
-          renderList();
+    openModal({
+      title: 'Modifica elemento',
+      content,
+      actions: [
+        { label: 'Annulla', onClick: (c) => c() },
+        {
+          label: 'Salva',
+          primary: true,
+          onClick: async (c) => {
+            const { qtyValue, qtyUnit } = qty.read();
+            await updatePantryItem(item.id, { qtyValue, qtyUnit, expiry: dateInput.value || null });
+            c();
+            toast('Elemento aggiornato', 'success');
+          },
         },
-        dataset: { tab: t.value },
-      },
-      t.label
-    );
-    tabsEl.appendChild(btn);
-  });
+      ],
+    });
+  }
 
-  const listEl = el('div', { class: 'card list-card' });
-  container.appendChild(addBar);
-  container.appendChild(tabsEl);
-  container.appendChild(listEl);
+  // Build a Frigo/Dispensa segmented picker for the add form.
+  function buildLocationSeg(initial, onChange) {
+    let location = initial;
+    const frigoBtn = el('button', { type: 'button', class: 'segmented-btn' }, 'Frigo');
+    const dispensaBtn = el('button', { type: 'button', class: 'segmented-btn' }, 'Dispensa');
+    function sync() {
+      frigoBtn.classList.toggle('active', location === 'frigo');
+      dispensaBtn.classList.toggle('active', location === 'dispensa');
+    }
+    frigoBtn.addEventListener('click', () => { location = 'frigo'; sync(); onChange(location); });
+    dispensaBtn.addEventListener('click', () => { location = 'dispensa'; sync(); onChange(location); });
+    sync();
+    const field = el('div', { class: 'field' }, [
+      el('span', { class: 'field-label' }, 'Posizione'),
+      el('div', { class: 'segmented segmented-inline' }, [frigoBtn, dispensaBtn]),
+    ]);
+    return { field, read: () => location };
+  }
 
   // --- Expiry chip ---
   function expiryChip(expiry) {
@@ -169,15 +196,18 @@ export function render(container) {
   // --- Row kebab ---
   async function openRowMenu(item, product) {
     const orphaned = product === undefined;
-    const items = [
-      { label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' },
-      { label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' },
-      { label: 'Rimuovi', icon: '🗑️', value: 'remove', danger: true },
-    ];
-    const menuItems = orphaned ? items.filter((i) => i.value === 'remove') : items;
+    const items = [];
+    if (!orphaned) {
+      items.push({ label: 'Modifica (quantità / scadenza)', icon: '✏️', value: 'edit' });
+      items.push({ label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' });
+      items.push({ label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' });
+    }
+    items.push({ label: 'Rimuovi', icon: '🗑️', value: 'remove', danger: true });
 
-    const choice = await openSheet({ title: product ? product.name : '(prodotto eliminato)', items: menuItems });
-    if (choice === 'toList') {
+    const choice = await openSheet({ title: product ? product.name : '(prodotto eliminato)', items });
+    if (choice === 'edit') {
+      openEditForm(item, product);
+    } else if (choice === 'toList') {
       await ensureListRef(item.productId);
       toast('Aggiunto alla spesa', 'success');
     } else if (choice === 'toWish') {
@@ -188,7 +218,7 @@ export function render(container) {
     }
   }
 
-  // --- Build a row ---
+  // --- Build a row (clean: name + qty/location sub + expiry chip) ---
   function buildRow(item, product) {
     const orphaned = product === undefined;
 
@@ -206,38 +236,7 @@ export function render(container) {
     if (subBits.length) main.appendChild(el('div', { class: 'row-sub' }, subBits.join(' · ')));
 
     const chip = expiryChip(item.expiry);
-    if (chip) main.appendChild(chip);
-
-    // Qty editor -> updatePantryItem.
-    const editor = qtyEditor({ value: item.qtyValue, unit: item.qtyUnit });
-    const qtyBtn = el(
-      'button',
-      {
-        type: 'button',
-        class: 'btn qty-commit',
-        onClick: async () => {
-          const { qtyValue, qtyUnit } = editor.read();
-          await updatePantryItem(item.id, { qtyValue, qtyUnit });
-          toast('Quantità aggiornata', 'success');
-        },
-      },
-      'OK'
-    );
-
-    // Expiry date editor -> updatePantryItem (stores 'YYYY-MM-DD' or null).
-    const dateInput = el('input', {
-      type: 'date',
-      class: 'input',
-      value: item.expiry || '',
-      'aria-label': 'Scadenza',
-      onChange: async (e) => {
-        const v = e.target.value || null;
-        await updatePantryItem(item.id, { expiry: v });
-      },
-    });
-
-    main.appendChild(el('div', { class: 'row-qty-edit' }, [editor.element, qtyBtn]));
-    main.appendChild(el('div', { class: 'row-expiry-edit' }, [dateInput]));
+    if (chip) main.appendChild(el('div', { class: 'row-chips' }, [chip]));
 
     const kebab = el(
       'button',
@@ -255,13 +254,12 @@ export function render(container) {
 
     listEl.textContent = '';
     if (items.length === 0) {
-      listEl.appendChild(el('div', { class: 'empty' }, 'Niente qui. Aggiungi un prodotto.'));
       listEl.appendChild(
-        el(
-          'button',
-          { type: 'button', class: 'btn btn-primary empty-cta', onClick: () => input.focus() },
-          'Aggiungi il primo elemento'
-        )
+        el('div', { class: 'empty' }, [
+          el('div', { class: 'empty-icon', 'aria-hidden': 'true' }, '🧺'),
+          el('p', {}, 'Niente qui.'),
+          el('button', { type: 'button', class: 'btn btn-primary', onClick: () => openAddForm() }, 'Aggiungi un prodotto'),
+        ])
       );
       return;
     }
@@ -283,7 +281,6 @@ export function render(container) {
   return {
     destroy() {
       unsubscribe();
-      auto.detach();
     },
   };
 }
