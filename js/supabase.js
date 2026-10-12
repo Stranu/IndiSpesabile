@@ -13,6 +13,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 export const signUp = (email, password) => supabase.auth.signUp({ email, password });
 export const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password });
 export const signOut = () => supabase.auth.signOut();
+export const resetPassword = (email) =>
+  supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname,
+  });
 export const getSession = () => supabase.auth.getSession();
 export const getUser = () => supabase.auth.getUser();
 export const onAuthStateChange = (cb) => supabase.auth.onAuthStateChange(cb);

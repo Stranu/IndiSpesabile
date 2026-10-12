@@ -28,7 +28,7 @@ export function render(container) {
     toast('Aggiunto ai desideri', 'success');
   }
 
-  const detachAuto = attachAutocomplete(input, {
+  const auto = attachAutocomplete(input, {
     onPick: (product) => addWish(product),
     onConfirmNew: async (name) => {
       const product = await getOrCreateProduct(name);
@@ -36,7 +36,7 @@ export function render(container) {
     },
   });
 
-  const addBar = el('div', { class: 'add-bar' }, [el('div', { class: 'add-row' }, [input])]);
+  const addBar = el('div', { class: 'add-bar' }, [el('div', { class: 'add-row' }, [auto.element])]);
   const listEl = el('div', { class: 'card list-card' });
   container.appendChild(addBar);
   container.appendChild(listEl);
@@ -115,7 +115,7 @@ export function render(container) {
   return {
     destroy() {
       unsubscribe();
-      detachAuto();
+      auto.detach();
     },
   };
 }

@@ -1,6 +1,6 @@
 {
-  "name": "Spesa",
-  "short_name": "Spesa",
+  "name": "IndiSpesabile",
+  "short_name": "IndiSpesabile",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

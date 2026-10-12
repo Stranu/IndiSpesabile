@@ -2,6 +2,8 @@
 // Routes: '#/spesa' (default), '#/dispensa', '#/desideri', '#/prodotti'.
 // Each view module exports render(container) -> { destroy }.
 
+import { el } from './ui.js';
+
 const DEFAULT_ROUTE = '/spesa';
 
 let _routes = null;
@@ -33,7 +35,17 @@ function render() {
   _mount.textContent = '';
 
   const renderFn = _routes[path];
-  const handle = renderFn(_mount) || {};
+  let handle = {};
+  try {
+    handle = renderFn(_mount) || {};
+  } catch (e) {
+    // Defense in depth: a view throw must never leave a mute section.
+    console.warn('router: view render threw', e);
+    _mount.textContent = '';
+    _mount.appendChild(
+      el('div', { class: 'empty' }, 'Si è verificato un errore nel caricare questa sezione.')
+    );
+  }
   _current = { path, destroy: handle.destroy };
 
   // Reflect the active route on the bottom-nav buttons.

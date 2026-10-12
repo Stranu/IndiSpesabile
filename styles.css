@@ -137,6 +137,23 @@ body {
   transform: scale(0.96);
 }
 
+.btn-settings {
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 var(--sp-3);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--on-brand);
+  color: var(--brand-dark);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.btn-settings:active {
+  transform: scale(0.96);
+}
+
 /* ---------- Main view ---------- */
 .app-view {
   padding: var(--sp-4);

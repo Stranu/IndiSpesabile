@@ -113,7 +113,7 @@ export function render(container) {
     });
   }
 
-  const detachAuto = attachAutocomplete(input, {
+  const auto = attachAutocomplete(input, {
     onPick: (product) => openAddForm(product),
     onConfirmNew: async (name) => {
       const product = await getOrCreateProduct(name);
@@ -121,7 +121,7 @@ export function render(container) {
     },
   });
 
-  const addBar = el('div', { class: 'add-bar' }, [el('div', { class: 'add-row' }, [input])]);
+  const addBar = el('div', { class: 'add-bar' }, [el('div', { class: 'add-row' }, [auto.element])]);
 
   // --- Filter tabs ---
   const tabsEl = el('div', { class: 'tabs' });
@@ -283,7 +283,7 @@ export function render(container) {
   return {
     destroy() {
       unsubscribe();
-      detachAuto();
+      auto.detach();
     },
   };
 }

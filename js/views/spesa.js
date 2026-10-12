@@ -39,7 +39,7 @@ export function render(container) {
     toast('Aggiunto alla spesa', 'success');
   }
 
-  const detachAuto = attachAutocomplete(input, {
+  const auto = attachAutocomplete(input, {
     onPick: (product) => addTyped(product),
     onConfirmNew: async (name) => {
       const product = await getOrCreateProduct(name);
@@ -59,7 +59,7 @@ export function render(container) {
   );
 
   const addBar = el('div', { class: 'add-bar' }, [
-    el('div', { class: 'add-row' }, [input]),
+    el('div', { class: 'add-row' }, [auto.element]),
     el('div', { class: 'add-row' }, [addQty.element]),
     el('div', { class: 'add-row quick-picks' }, [ricorrentiBtn, desideriBtn]),
   ]);
@@ -227,7 +227,7 @@ export function render(container) {
   return {
     destroy() {
       unsubscribe();
-      detachAuto();
+      auto.detach();
     },
   };
 }

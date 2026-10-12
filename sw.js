@@ -5,7 +5,7 @@
  * both the §2 import graph and this PRECACHE array AND bumping CACHE_NAME.
  */
 
-const CACHE_NAME = 'spesa-cache-v1';
+const CACHE_NAME = 'spesa-cache-v2';
 
 const PRECACHE = [
   './',

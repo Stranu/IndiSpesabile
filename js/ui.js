@@ -186,15 +186,19 @@ export async function confirmSheet(message, { okLabel = 'Conferma', danger = fal
 }
 
 // ----- attachAutocomplete(inputEl, {onPick, onConfirmNew}) ---------------------
-// Returns a detach fn. Suggestion <ul> populated on input (debounced 150ms) via
-// store.suggestProducts. Tap/Enter selects a product via onPick, or confirms the
-// typed text via onConfirmNew.
+// Returns { element, detach }. `element` is the .autocomplete wrapper the caller
+// must mount (it already contains inputEl); `detach` removes listeners + the list.
+// Suggestion <ul> populated on input (debounced 150ms) via store.suggestProducts.
+// Tap/Enter selects a product via onPick, or confirms the typed text via onConfirmNew.
+// Parent-independent: works whether inputEl already has a parent or not.
 export function attachAutocomplete(inputEl, { onPick, onConfirmNew }) {
   // Ensure the input lives inside a positioned .autocomplete wrapper.
   let wrap = inputEl.parentElement;
   if (!wrap || !wrap.classList.contains('autocomplete')) {
     wrap = el('div', { class: 'autocomplete' });
-    inputEl.parentNode.insertBefore(wrap, inputEl);
+    if (inputEl.parentNode) {
+      inputEl.parentNode.insertBefore(wrap, inputEl);
+    }
     wrap.appendChild(inputEl);
   }
   const listEl = el('ul', { class: 'autocomplete-list' });
@@ -285,13 +289,15 @@ export function attachAutocomplete(inputEl, { onPick, onConfirmNew }) {
   inputEl.addEventListener('keydown', onKey);
   inputEl.addEventListener('blur', onBlur);
 
-  return function detach() {
+  function detach() {
     if (timer) clearTimeout(timer);
     inputEl.removeEventListener('input', onInput);
     inputEl.removeEventListener('keydown', onKey);
     inputEl.removeEventListener('blur', onBlur);
     listEl.remove();
-  };
+  }
+
+  return { element: wrap, detach };
 }
 
 // ----- qtyEditor({value, unit}) ------------------------------------------------

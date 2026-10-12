@@ -1,4 +1,4 @@
-# Spesa
+# IndiSpesabile
 
 PWA locale-first per la spesa di casa: vanilla JavaScript, moduli ES nativi, nessun framework, nessun bundler, nessun passo di build. I dati vivono in IndexedDB (sorgente di verità) e vengono sincronizzati con Supabase quando sei collegato. L'interfaccia è in italiano e funziona offline una volta installata.
 
@@ -61,6 +61,8 @@ Queste tabelle sono **off-limits**: questa PWA non le legge, non le scrive e non
 Nella dashboard Supabase vai in **Authentication → URL Configuration** e aggiungi l'URL da cui servi l'app (es. l'URL di GitHub Pages e/o `http://localhost:8000`) sia a **Site URL** sia a **Redirect URLs**.
 
 > Se l'URL di deploy non è registrato qui, Supabase **rifiuta** la conferma email e i redirect di autenticazione: la registrazione e il login via email non funzioneranno. Aggiungi ogni origine da cui l'app verrà aperta (Pages e localhost per lo sviluppo).
+
+> Lo stesso vale per il **reset della password** ("Password dimenticata?"): il redirect del link di reset punta all'URL dell'app, quindi quell'URL deve essere registrato in **Authentication → URL Configuration** (sia **Site URL** sia **Redirect URLs**), altrimenti Supabase rifiuta il link di reimpostazione.
 
 ## 6. Ri-esecuzione dello script (errore "policy ... already exists")
 

@@ -50,6 +50,10 @@ async function main() {
   const syncBtn = document.getElementById('sync-btn');
   if (syncBtn) syncBtn.addEventListener('click', () => sync.fullSync());
 
+  // Settings gear (top-right, every section): opens the same auth/settings modal.
+  const settingsBtn = document.getElementById('settings-btn');
+  if (settingsBtn) settingsBtn.addEventListener('click', openAuthModal);
+
   // Account chip: shows session email or 'Accedi' (opens the auth modal).
   if (chip) {
     chip.style.cursor = 'pointer';

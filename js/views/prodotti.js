@@ -75,7 +75,7 @@ export function render(container) {
     ]);
 
     const content = el('div', {}, [nameWrap, recurringLabel]);
-    const detach = attachAutocomplete(nameInput, {
+    const { detach } = attachAutocomplete(nameInput, {
       onPick: (product) => {
         nameInput.value = product.name;
       },
