@@ -15,12 +15,34 @@ import {
   updateListItem,
   markBought,
   discardListItem,
+  clearBoughtListItems,
   listItemToPantry,
 } from '../store.js';
-import { el, toast, openSheet, openChoice, openModal, qtyEditor, nameField, fab } from '../ui.js';
+import { el, toast, openSheet, openChoice, openModal, confirmSheet, qtyEditor, nameField, fab } from '../ui.js';
 import { formatQty } from '../units.js';
 
 export function render(container) {
+  // Bulk action bar: "Svuota comprati" — only shown when there are bought items.
+  const clearBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'btn btn-ghost clear-bought-btn',
+      onClick: async () => {
+        const ok = await confirmSheet('Rimuovere tutti gli articoli comprati dalla lista?', {
+          okLabel: 'Svuota comprati',
+          danger: true,
+        });
+        if (!ok) return;
+        const n = await clearBoughtListItems();
+        toast(n > 0 ? `Rimossi ${n} articoli comprati` : 'Nessun articolo comprato', 'success');
+      },
+    },
+    '🧹 Svuota comprati'
+  );
+  const actionBar = el('div', { class: 'action-bar', hidden: true }, [clearBtn]);
+  container.appendChild(actionBar);
+
   const listEl = el('div', { class: 'card list-card' });
   container.appendChild(listEl);
 
@@ -215,6 +237,9 @@ export function render(container) {
   async function renderList() {
     const voices = await getAllList();
     listEl.textContent = '';
+
+    // Toggle the "Svuota comprati" bar based on whether any item is bought.
+    actionBar.hidden = !voices.some((v) => v.bought === true);
 
     if (voices.length === 0) {
       listEl.appendChild(

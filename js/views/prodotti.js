@@ -141,7 +141,10 @@ export function render(container) {
       await toggleRecurring(product.id);
       toast(product.recurring ? 'Rimosso dai ricorrenti' : 'Aggiunto ai ricorrenti', 'success');
     } else if (choice === 'delete') {
-      const ok = await confirmSheet(`Elimina «${product.name}» e le sue voci?`, { okLabel: 'Elimina', danger: true });
+      const ok = await confirmSheet(
+        `Eliminare «${product.name}»? Verrà rimosso dal catalogo e da spesa, dispensa e desideri. L'azione non è reversibile.`,
+        { okLabel: 'Elimina', danger: true }
+      );
       if (ok) {
         await deleteProductCascade(product.id);
         toast('Prodotto eliminato', 'success');

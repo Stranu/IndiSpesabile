@@ -10,6 +10,7 @@ import {
   getProduct,
   getOrCreateProduct,
   daysUntil,
+  expiryLevel,
   mergePantryQuantity,
   updatePantryItem,
   removePantryItem,
@@ -25,8 +26,20 @@ const TABS = [
   { label: 'Tutti', value: 'tutti' },
 ];
 
+// Severity icon + accessible label per expiry level (shared source: store.expiryLevel).
+const EXPIRY_ICON = {
+  warn: { icon: '🟡', label: 'In scadenza (entro una settimana)' },
+  soon: { icon: '🟠', label: 'In scadenza (pochi giorni)' },
+  today: { icon: '🔴', label: 'Scade oggi' },
+  expired: { icon: '⚠️', label: 'Scaduto' },
+};
+
+// Sort rank: most urgent first (expired < today < soon < warn < ok/none).
+const EXPIRY_RANK = { expired: 0, today: 1, soon: 2, warn: 3, ok: 4, null: 5 };
+
 export function render(container) {
   let activeTab = 'frigo'; // default Frigo
+  let onlyExpiring = false;
 
   // --- Segmented filter ---
   const tabsEl = el('div', { class: 'segmented' });
@@ -50,8 +63,27 @@ export function render(container) {
     tabsEl.appendChild(btn);
   });
 
+  // "Solo in scadenza" filter chip (orthogonal to the Frigo/Dispensa/Tutti tabs).
+  const expiringChip = el(
+    'button',
+    {
+      type: 'button',
+      class: 'filter-chip',
+      'aria-pressed': 'false',
+      onClick: () => {
+        onlyExpiring = !onlyExpiring;
+        expiringChip.classList.toggle('active', onlyExpiring);
+        expiringChip.setAttribute('aria-pressed', String(onlyExpiring));
+        renderList();
+      },
+    },
+    '⏰ Solo in scadenza'
+  );
+  const filterRow = el('div', { class: 'filter-row' }, [expiringChip]);
+
   const listEl = el('div', { class: 'card list-card' });
   container.appendChild(tabsEl);
+  container.appendChild(filterRow);
   container.appendChild(listEl);
 
   const addFab = fab({ label: 'Aggiungi alla dispensa', onClick: () => openAddForm() });
@@ -222,11 +254,17 @@ export function render(container) {
   function buildRow(item, product) {
     const orphaned = product === undefined;
 
-    const title = el(
-      'div',
-      { class: `row-title${orphaned ? ' orphaned' : ''}` },
-      orphaned ? '(prodotto eliminato)' : product.name
+    const level = expiryLevel(item.expiry);
+    const sev = level && EXPIRY_ICON[level];
+
+    const titleBits = [];
+    if (sev) {
+      titleBits.push(el('span', { class: 'sev-icon', title: sev.label, 'aria-label': sev.label }, sev.icon));
+    }
+    titleBits.push(
+      el('span', { class: 'row-title-text' }, orphaned ? '(prodotto eliminato)' : product.name)
     );
+    const title = el('div', { class: `row-title${orphaned ? ' orphaned' : ''}` }, titleBits);
     const main = el('div', { class: 'row-main' }, [title]);
 
     const subBits = [];
@@ -251,20 +289,34 @@ export function render(container) {
   async function renderList() {
     let items = await getAllPantry();
     if (activeTab !== 'tutti') items = items.filter((i) => i.location === activeTab);
+    if (onlyExpiring) {
+      items = items.filter((i) => {
+        const lvl = expiryLevel(i.expiry);
+        return lvl === 'warn' || lvl === 'soon' || lvl === 'today' || lvl === 'expired';
+      });
+    }
 
     listEl.textContent = '';
     if (items.length === 0) {
+      const msg = onlyExpiring ? 'Niente in scadenza.' : 'Niente qui.';
       listEl.appendChild(
         el('div', { class: 'empty' }, [
           el('div', { class: 'empty-icon', 'aria-hidden': 'true' }, '🧺'),
-          el('p', {}, 'Niente qui.'),
+          el('p', {}, msg),
           el('button', { type: 'button', class: 'btn btn-primary', onClick: () => openAddForm() }, 'Aggiungi un prodotto'),
         ])
       );
       return;
     }
 
-    items.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+    // Sort by expiry urgency first (most urgent on top), then by creation time.
+    // Items with no expiry sink to the bottom.
+    items.sort((a, b) => {
+      const ra = EXPIRY_RANK[expiryLevel(a.expiry) ?? 'null'];
+      const rb = EXPIRY_RANK[expiryLevel(b.expiry) ?? 'null'];
+      if (ra !== rb) return ra - rb;
+      return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+    });
 
     for (const item of items) {
       const product = await getProduct(item.productId); // may be undefined -> orphaned

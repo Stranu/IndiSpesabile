@@ -57,6 +57,44 @@ export function daysUntil(expiryYMD) {
   return Math.round((exp - now) / 86400000);
 }
 
+// expiryLevel(expiryYMD) — single source of truth for expiry severity, shared by
+// the pantry rows, the nav badges and any summary. Returns one of:
+//   null       -> no expiry set (expiryYMD null/empty)
+//   'ok'       -> more than 7 days left
+//   'warn'     -> 4..7 days left (yellow)
+//   'soon'     -> 1..3 days left (orange)
+//   'today'    -> expires today (red)
+//   'expired'  -> already past (red, worst)
+export function expiryLevel(expiryYMD) {
+  if (expiryYMD == null || expiryYMD === '') return null;
+  const d = daysUntil(expiryYMD);
+  if (d < 0) return 'expired';
+  if (d === 0) return 'today';
+  if (d <= 3) return 'soon';
+  if (d <= 7) return 'warn';
+  return 'ok';
+}
+
+// A pantry item "counts as expiring" when its level is one of the attention
+// states (warn/soon/today/expired) — used for the nav badge and summaries.
+const EXPIRING_LEVELS = new Set(['warn', 'soon', 'today', 'expired']);
+
+// countExpiring() — how many live pantry items need attention (expiring/expired).
+export async function countExpiring() {
+  const items = await getAllPantry();
+  let n = 0;
+  for (const it of items) {
+    if (EXPIRING_LEVELS.has(expiryLevel(it.expiry))) n += 1;
+  }
+  return n;
+}
+
+// countListToBuy() — how many live shopping items are not yet bought.
+export async function countListToBuy() {
+  const items = await getAllList();
+  return items.filter((v) => v.bought === false).length;
+}
+
 // ----- Meta helpers ----------------------------------------------------------
 
 export async function getMeta(key, fallback = null) {
@@ -286,6 +324,17 @@ export async function markBought(id, bought = true) {
 
 export async function discardListItem(id) {
   await db.del('list', id);
+}
+
+// clearBoughtListItems — soft-delete every live BOUGHT shopping item in one pass.
+// Returns the number removed. Each del() fires onChange so views re-render + a push
+// is scheduled. The product stays in the catalog.
+export async function clearBoughtListItems() {
+  const bought = (await getAllList()).filter((v) => v.bought === true);
+  for (const v of bought) {
+    await db.del('list', v.id);
+  }
+  return bought.length;
 }
 
 // listItemToPantry (§8) — read qty -> mergePantryQuantity -> discardListItem.

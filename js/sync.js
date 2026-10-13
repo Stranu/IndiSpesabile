@@ -342,6 +342,72 @@ export function scheduleSync() {
   }, DEBOUNCE_MS);
 }
 
+// ----- Periodic auto-pull (shared-account freshness) -------------------------
+// Not realtime: every POLL_MS, if there is a session, pull remote changes so a
+// second person's edits show up on their own. Zero-network/no-op when logged out.
+// A manual re-entrancy guard prevents overlapping polls. Started on login,
+// stopped on logout (see app.js auth-state handler).
+const POLL_MS = 30000;
+let _pollTimer = null;
+let _polling = false;
+
+async function pollOnce() {
+  if (_polling) return; // skip if a previous poll is still running
+  _polling = true;
+  try {
+    let session;
+    try {
+      const res = await getSession();
+      session = res.data.session;
+    } catch (e) {
+      console.warn('autoPull: getSession failed, treating as no session', e);
+      return;
+    }
+    if (!session) return; // zero network when logged out
+
+    try {
+      await pull();
+      const lastSyncAt = nowISO();
+      await setMeta('lastSyncAt', lastSyncAt);
+      emitStatus('ok', { lastSyncAt });
+    } catch (e) {
+      console.warn('autoPull: pull failed', e);
+      emitStatus('error');
+    }
+  } finally {
+    _polling = false;
+  }
+}
+
+// Pull immediately when the tab becomes visible again (phone unlocked, app
+// refocused) so the user sees fresh shared data without waiting for the timer.
+function onVisible() {
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+    pollOnce();
+  }
+}
+
+// startAutoPull() — idempotent; begins the periodic pull + visibility refresh.
+export function startAutoPull() {
+  if (_pollTimer) return;
+  _pollTimer = setInterval(pollOnce, POLL_MS);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisible);
+  }
+  pollOnce(); // immediate first pull so login shows shared data right away
+}
+
+// stopAutoPull() — halts the periodic pull + removes the visibility listener (logout).
+export function stopAutoPull() {
+  if (_pollTimer) {
+    clearInterval(_pollTimer);
+    _pollTimer = null;
+  }
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', onVisible);
+  }
+}
+
 // ----- init() (§14 / §15 step 6) ---------------------------------------------
 export function init() {
   db.onChange((payload) => {

@@ -339,7 +339,33 @@ export function qtyEditor({ value = null, unit = null } = {}) {
   );
   if (unit) unitSelect.value = unit;
 
-  const element = el('div', { class: 'qty-editor' }, [valueInput, unitSelect]);
+  // Per-unit step for the quick +/- buttons: 1 for 'pz', 0.1 for weights/volumes.
+  function stepFor(u) {
+    return u === 'pz' ? 1 : 0.1;
+  }
+
+  function nudge(delta) {
+    const current = parseDecimal(valueInput.value.trim());
+    const base = current == null ? 0 : current;
+    let next = base + delta;
+    if (next < 0) next = 0;
+    // Round to 3 decimals to avoid float noise (0.1+0.2 etc.).
+    next = Math.round(next * 1000) / 1000;
+    valueInput.value = String(next).replace('.', ',');
+  }
+
+  const minusBtn = el(
+    'button',
+    { type: 'button', class: 'qty-step', 'aria-label': 'Diminuisci', onClick: () => nudge(-stepFor(unitSelect.value)) },
+    '−'
+  );
+  const plusBtn = el(
+    'button',
+    { type: 'button', class: 'qty-step', 'aria-label': 'Aumenta', onClick: () => nudge(stepFor(unitSelect.value)) },
+    '+'
+  );
+
+  const element = el('div', { class: 'qty-editor' }, [minusBtn, valueInput, plusBtn, unitSelect]);
 
   return {
     element,
