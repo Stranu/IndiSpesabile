@@ -454,6 +454,113 @@ export async function removeWishlistItem(id) {
   await db.del('wishlist', id);
 }
 
+// ----- Bulk helpers for multi-select actions ---------------------------------
+// Each loops the per-item primitive so every mutation fires onChange (views
+// re-render, push is scheduled). Returned count = items processed.
+
+export async function deleteProductsCascade(ids) {
+  for (const id of ids) await deleteProductCascade(id);
+  return ids.length;
+}
+
+export async function addProductsToList(productIds) {
+  for (const pid of productIds) await ensureListRef(pid);
+  return productIds.length;
+}
+
+export async function addProductsToWishlist(productIds) {
+  for (const pid of productIds) await ensureWishlistRef(pid);
+  return productIds.length;
+}
+
+// setRecurringMany — force the recurring flag to a given value on many products.
+export async function setRecurringMany(ids, value) {
+  for (const id of ids) {
+    const p = await db.get('products', id);
+    if (p && p.deleted === false && p.recurring !== value) {
+      p.recurring = value;
+      p.updatedAt = nowISO();
+      await db.put('products', p);
+    }
+  }
+  return ids.length;
+}
+
+// ----- Bulk helpers keyed by VOICE id (list/pantry/wishlist) -----------------
+// These take the ids of entries in a section (not product ids) and act in bulk.
+
+// List voices:
+export async function markBoughtMany(listIds, bought = true) {
+  for (const id of listIds) {
+    const v = await db.get('list', id);
+    if (v && v.deleted === false && v.bought !== bought) {
+      v.bought = bought;
+      v.updatedAt = nowISO();
+      await db.put('list', v);
+    }
+  }
+  return listIds.length;
+}
+
+export async function discardListItemsMany(listIds) {
+  for (const id of listIds) await db.del('list', id);
+  return listIds.length;
+}
+
+// Move many list voices to the pantry at one location (inherits qty, sums if present).
+export async function listItemsToPantryMany(listIds, location) {
+  let moved = 0;
+  for (const id of listIds) {
+    const v = await db.get('list', id);
+    if (!v || v.deleted === true) continue;
+    await mergePantryQuantity(location, v.productId, v.qtyValue, v.qtyUnit);
+    await db.del('list', id);
+    moved += 1;
+  }
+  return moved;
+}
+
+// Pantry voices:
+export async function removePantryItemsMany(pantryIds) {
+  for (const id of pantryIds) await db.del('pantry', id);
+  return pantryIds.length;
+}
+
+// Wishlist voices:
+export async function removeWishlistItemsMany(wishlistIds) {
+  for (const id of wishlistIds) await db.del('wishlist', id);
+  return wishlistIds.length;
+}
+
+// Add many section voices' PRODUCTS to the shopping list / wishlist / pantry.
+// `voiceStore` is 'list' | 'pantry' | 'wishlist'; we read each voice's productId.
+async function productIdsFromVoices(voiceStore, voiceIds) {
+  const out = [];
+  for (const id of voiceIds) {
+    const v = await db.get(voiceStore, id);
+    if (v && v.deleted === false && v.productId) out.push(v.productId);
+  }
+  return out;
+}
+
+export async function voicesToList(voiceStore, voiceIds) {
+  const pids = await productIdsFromVoices(voiceStore, voiceIds);
+  for (const pid of pids) await ensureListRef(pid);
+  return pids.length;
+}
+
+export async function voicesToWishlist(voiceStore, voiceIds) {
+  const pids = await productIdsFromVoices(voiceStore, voiceIds);
+  for (const pid of pids) await ensureWishlistRef(pid);
+  return pids.length;
+}
+
+export async function voicesToPantry(voiceStore, voiceIds, location) {
+  const pids = await productIdsFromVoices(voiceStore, voiceIds);
+  for (const pid of pids) await mergePantryQuantity(location, pid, null, null);
+  return pids.length;
+}
+
 // ----- Cross-section helpers (§8) --------------------------------------------
 
 // ensureListRef — SOLE list dedup entry point. Returns the existing live not-bought voice;

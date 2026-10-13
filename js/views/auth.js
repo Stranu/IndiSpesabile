@@ -49,6 +49,12 @@ export function render({ close } = {}) {
   // Container is populated asynchronously once the session is resolved.
   const container = el('div', { class: 'auth-view' });
 
+  // Show the login/signup form IMMEDIATELY (synchronously) so the panel is never
+  // just an empty "Account" title while getSession() resolves. If a session turns
+  // out to exist, we swap to the logged-in view below. This fixes the race where
+  // a slow/failed getSession() left the modal showing only the title.
+  renderLoggedOut();
+
   function renderLoggedIn(session) {
     const email =
       (session && session.user && session.user.email) || 'Account collegato';

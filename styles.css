@@ -170,7 +170,8 @@ body {
 .app-view {
   padding: var(--sp-4);
   padding-top: calc(var(--header-h) + env(safe-area-inset-top) + var(--sp-4));
-  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--sp-5));
+  /* Extra bottom space so the floating "+" never covers the last row's kebab. */
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 72px + var(--sp-4));
   min-height: 100vh;
 }
 
@@ -829,6 +830,77 @@ select {
 
 .auth-actions .btn {
   flex: 1 1 0;
+}
+
+/* ---------- Multi-select mode ---------- */
+.selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--brand-light);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius);
+}
+
+.selection-bar[hidden] {
+  display: none;
+}
+
+.selection-bar-left,
+.selection-bar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.sel-count {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--brand-dark);
+  white-space: nowrap;
+}
+
+.sel-actions-btn {
+  min-height: 38px;
+  padding: 0 var(--sp-3);
+}
+
+.sel-actions-btn:disabled {
+  opacity: 0.5;
+}
+
+.sel-check {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--on-brand);
+  background: var(--surface);
+}
+
+.sel-check.checked {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.row-selected {
+  background: var(--brand-light);
+}
+
+/* In selection mode the whole row is a tap target; disable text selection. */
+.selection-bar ~ .list-card .row {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
 }
 
 /* ---------- Nav badges ---------- */

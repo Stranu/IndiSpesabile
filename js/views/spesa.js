@@ -2,7 +2,9 @@
 // Add via a floating "+" that opens an input panel (name + autocomplete + optional qty),
 // plus quick-pick shortcuts from Ricorrenti and Desideri. Quantity is edited from the
 // row kebab ("Modifica"), not inline. Bought items stay, struck-through, sorted to the
-// bottom (D3). Orphaned-ref rows render '(prodotto eliminato)'. All Italian.
+// bottom (D3). Multi-select mode (long-press a row or tap "Seleziona") enables bulk
+// mark-bought / to-pantry / discard. Orphaned-ref rows render '(prodotto eliminato)'.
+// All Italian.
 
 import * as db from '../db.js';
 import {
@@ -14,20 +16,34 @@ import {
   ensureListRef,
   updateListItem,
   markBought,
+  markBoughtMany,
   discardListItem,
+  discardListItemsMany,
   clearBoughtListItems,
   listItemToPantry,
+  listItemsToPantryMany,
 } from '../store.js';
-import { el, toast, openSheet, openChoice, openModal, confirmSheet, qtyEditor, nameField, fab } from '../ui.js';
+import {
+  el, toast, openSheet, openChoice, openModal, confirmSheet, qtyEditor, nameField, fab,
+  selectionController, attachLongPress,
+} from '../ui.js';
 import { formatQty } from '../units.js';
 
 export function render(container) {
-  // Bulk action bar: "Svuota comprati" — only shown when there are bought items.
+  let lastRendered = [];
+  const longPressDetachers = [];
+
+  const selection = selectionController(() => {
+    updateSelectionUI();
+    renderList();
+  });
+
+  // --- "Svuota comprati" bar (shown only when there are bought items & not selecting) ---
   const clearBtn = el(
     'button',
     {
       type: 'button',
-      class: 'btn btn-ghost clear-bought-btn',
+      class: 'btn-ghost clear-bought-btn',
       onClick: async () => {
         const ok = await confirmSheet('Rimuovere tutti gli articoli comprati dalla lista?', {
           okLabel: 'Svuota comprati',
@@ -40,14 +56,80 @@ export function render(container) {
     },
     '🧹 Svuota comprati'
   );
-  const actionBar = el('div', { class: 'action-bar', hidden: true }, [clearBtn]);
+  const selectBtn = el('button', { type: 'button', class: 'filter-chip', onClick: () => selection.enter() }, '☑️ Seleziona');
+  const actionBar = el('div', { class: 'action-bar between', hidden: true }, [selectBtn, clearBtn]);
   container.appendChild(actionBar);
+
+  // --- Selection action bar ---
+  const selCount = el('span', { class: 'sel-count' }, '0 selezionati');
+  const selAllBtn = el('button', { type: 'button', class: 'btn-ghost', onClick: selectAllShown }, 'Tutti');
+  const selActionsBtn = el('button', { type: 'button', class: 'btn btn-primary sel-actions-btn', onClick: openBulkActions }, 'Azioni');
+  const selCancelBtn = el('button', { type: 'button', class: 'btn-ghost', onClick: () => selection.exit() }, 'Annulla');
+  const selectionBar = el('div', { class: 'selection-bar', hidden: true }, [
+    el('div', { class: 'selection-bar-left' }, [selCancelBtn, selCount]),
+    el('div', { class: 'selection-bar-right' }, [selAllBtn, selActionsBtn]),
+  ]);
+  container.appendChild(selectionBar);
 
   const listEl = el('div', { class: 'card list-card' });
   container.appendChild(listEl);
 
   const addFab = fab({ label: 'Aggiungi alla spesa', onClick: openAddForm });
   container.appendChild(addFab);
+
+  function updateSelectionUI() {
+    const active = selection.isActive();
+    selectionBar.hidden = !active;
+    addFab.hidden = active;
+    selCount.textContent = `${selection.count()} selezionati`;
+    selActionsBtn.disabled = selection.count() === 0;
+    // The "Svuota comprati"/"Seleziona" bar is managed in renderList (depends on data),
+    // but it must always hide while selecting.
+    if (active) actionBar.hidden = true;
+  }
+
+  function selectAllShown() {
+    for (const v of lastRendered) if (!selection.has(v.id)) selection.toggle(v.id);
+  }
+
+  async function openBulkActions() {
+    const ids = selection.ids();
+    if (ids.length === 0) return;
+    const choice = await openSheet({
+      title: `${ids.length} articoli selezionati`,
+      items: [
+        { label: 'Segna come comprato', icon: '✅', value: 'bought' },
+        { label: 'Segna come da comprare', icon: '↩️', value: 'unbought' },
+        { label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' },
+        { label: 'Scarta (rimuovi)', icon: '🗑️', value: 'discard', danger: true },
+      ],
+    });
+    if (!choice) return;
+
+    if (choice === 'bought') {
+      const n = await markBoughtMany(ids, true);
+      toast(`${n} segnati come comprati`, 'success');
+      selection.exit();
+    } else if (choice === 'unbought') {
+      const n = await markBoughtMany(ids, false);
+      toast(`${n} segnati come da comprare`, 'success');
+      selection.exit();
+    } else if (choice === 'toPantry') {
+      const where = await openChoice('Frigo o Dispensa?', ['Frigo', 'Dispensa']);
+      if (!where) return;
+      const location = where === 'Frigo' ? 'frigo' : 'dispensa';
+      const n = await listItemsToPantryMany(ids, location);
+      toast(`Spostati ${n} in dispensa`, 'success');
+      selection.exit();
+    } else if (choice === 'discard') {
+      const ok = await confirmSheet(`Scartare ${ids.length} articoli dalla lista?`, { okLabel: 'Scarta', danger: true });
+      if (ok) {
+        const n = await discardListItemsMany(ids);
+        toast(`Scartati ${n} articoli`, 'success');
+        selection.exit();
+      }
+    }
+  }
 
   // --- Add panel: name + autocomplete + optional quantity ---
   function openAddForm() {
@@ -58,7 +140,6 @@ export function render(container) {
       qty.element,
     ]);
 
-    // Quick-pick shortcuts live inside the panel so the empty state is never a dead end.
     const ricorrentiBtn = el('button', { type: 'button', class: 'btn chip-btn', onClick: () => pickRicorrenti(close) }, '🔁 Ricorrenti');
     const desideriBtn = el('button', { type: 'button', class: 'btn chip-btn', onClick: () => pickDesideri(close) }, '⭐ Dai desideri');
     const shortcuts = el('div', { class: 'field' }, [
@@ -98,7 +179,6 @@ export function render(container) {
     name.inputEl.focus();
   }
 
-  // --- Quick-pick: Ricorrenti (closes the add panel on choice) ---
   async function pickRicorrenti(closeParent) {
     const products = (await getAllProducts()).filter((p) => p.recurring === true);
     if (products.length === 0) {
@@ -118,7 +198,6 @@ export function render(container) {
     }
   }
 
-  // --- Quick-pick: Desideri ---
   async function pickDesideri(closeParent) {
     const wishes = await getAllWishlist();
     const items = [];
@@ -186,6 +265,7 @@ export function render(container) {
       items.push({ label: 'Modifica quantità', icon: '✏️', value: 'edit' });
       items.push({ label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' });
     }
+    items.push({ label: 'Seleziona più elementi', icon: '☑️', value: 'select' });
     items.push({ label: 'Scarta', icon: '🗑️', value: 'discard', danger: true });
 
     const choice = await openSheet({ title: product ? product.name : '(prodotto eliminato)', items });
@@ -195,6 +275,8 @@ export function render(container) {
       await markBought(voice.id, false);
     } else if (choice === 'edit') {
       openEditQty(voice, product);
+    } else if (choice === 'select') {
+      selection.enter(voice.id);
     } else if (choice === 'discard') {
       await discardListItem(voice.id);
     } else if (choice === 'toPantry') {
@@ -213,6 +295,8 @@ export function render(container) {
   // --- Build a single row (clean: name + qty text, no inline editors) ---
   function buildRow(voice, product) {
     const orphaned = product === undefined;
+    const selMode = selection.isActive();
+    const selected = selection.has(voice.id);
 
     const title = el(
       'div',
@@ -224,24 +308,45 @@ export function render(container) {
     const qtyStr = formatQty(voice.qtyValue, voice.qtyUnit);
     if (qtyStr) main.appendChild(el('div', { class: 'row-sub' }, qtyStr));
 
-    const kebab = el(
-      'button',
-      { type: 'button', class: 'kebab-btn', 'aria-label': 'Azioni', onClick: () => openRowMenu(voice, product) },
-      '⋮'
-    );
+    const children = [];
+    if (selMode) {
+      children.push(el('span', { class: `sel-check${selected ? ' checked' : ''}`, 'aria-hidden': 'true' }, selected ? '✓' : ''));
+    }
+    children.push(main);
+    if (!selMode) {
+      children.push(el('button', { type: 'button', class: 'kebab-btn', 'aria-label': 'Azioni', onClick: () => openRowMenu(voice, product) }, '⋮'));
+    }
 
-    return el('div', { class: `row${voice.bought ? ' bought' : ''}` }, [main, kebab]);
+    const row = el('div', { class: `row${voice.bought ? ' bought' : ''}${selMode && selected ? ' row-selected' : ''}` }, children);
+    if (selMode) {
+      row.addEventListener('click', () => selection.toggle(voice.id));
+    } else {
+      longPressDetachers.push(attachLongPress(row, () => selection.enter(voice.id)));
+    }
+    return row;
+  }
+
+  function clearLongPress() {
+    while (longPressDetachers.length) {
+      const d = longPressDetachers.pop();
+      try { d(); } catch (_) { /* noop */ }
+    }
   }
 
   // --- Render the whole list ---
   async function renderList() {
+    clearLongPress();
     const voices = await getAllList();
+
+    // "Svuota comprati"/"Seleziona" bar: shown when there are items and NOT selecting.
+    const hasBought = voices.some((v) => v.bought === true);
+    clearBtn.hidden = !hasBought;
+    actionBar.hidden = selection.isActive() || voices.length === 0;
+
     listEl.textContent = '';
 
-    // Toggle the "Svuota comprati" bar based on whether any item is bought.
-    actionBar.hidden = !voices.some((v) => v.bought === true);
-
     if (voices.length === 0) {
+      lastRendered = [];
       listEl.appendChild(
         el('div', { class: 'empty' }, [
           el('div', { class: 'empty-icon', 'aria-hidden': 'true' }, '🛒'),
@@ -257,6 +362,7 @@ export function render(container) {
       if (a.bought !== b.bought) return a.bought ? 1 : -1;
       return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
     });
+    lastRendered = voices;
 
     for (const voice of voices) {
       const product = await getProduct(voice.productId); // may be undefined -> orphaned
@@ -268,11 +374,13 @@ export function render(container) {
     if (payload.store === 'list' || payload.store === 'products') renderList();
   });
 
+  updateSelectionUI();
   renderList();
 
   return {
     destroy() {
       unsubscribe();
+      clearLongPress();
     },
   };
 }

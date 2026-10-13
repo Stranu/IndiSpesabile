@@ -14,10 +14,16 @@ import {
   mergePantryQuantity,
   updatePantryItem,
   removePantryItem,
+  removePantryItemsMany,
+  voicesToList,
+  voicesToWishlist,
   ensureListRef,
   ensureWishlistRef,
 } from '../store.js';
-import { el, toast, openSheet, openModal, qtyEditor, nameField, fab } from '../ui.js';
+import {
+  el, toast, openSheet, openModal, qtyEditor, nameField, fab,
+  selectionController, attachLongPress,
+} from '../ui.js';
 import { formatQty } from '../units.js';
 
 const TABS = [
@@ -40,6 +46,13 @@ const EXPIRY_RANK = { expired: 0, today: 1, soon: 2, warn: 3, ok: 4, null: 5 };
 export function render(container) {
   let activeTab = 'frigo'; // default Frigo
   let onlyExpiring = false;
+  let lastRendered = [];
+  const longPressDetachers = [];
+
+  const selection = selectionController(() => {
+    updateSelectionUI();
+    renderList();
+  });
 
   // --- Segmented filter ---
   const tabsEl = el('div', { class: 'segmented' });
@@ -79,15 +92,69 @@ export function render(container) {
     },
     '⏰ Solo in scadenza'
   );
-  const filterRow = el('div', { class: 'filter-row' }, [expiringChip]);
+  const selectBtn = el('button', { type: 'button', class: 'filter-chip', onClick: () => selection.enter() }, '☑️ Seleziona');
+  const filterRow = el('div', { class: 'filter-row' }, [expiringChip, selectBtn]);
+
+  // --- Selection action bar ---
+  const selCount = el('span', { class: 'sel-count' }, '0 selezionati');
+  const selAllBtn = el('button', { type: 'button', class: 'btn-ghost', onClick: selectAllShown }, 'Tutti');
+  const selActionsBtn = el('button', { type: 'button', class: 'btn btn-primary sel-actions-btn', onClick: openBulkActions }, 'Azioni');
+  const selCancelBtn = el('button', { type: 'button', class: 'btn-ghost', onClick: () => selection.exit() }, 'Annulla');
+  const selectionBar = el('div', { class: 'selection-bar', hidden: true }, [
+    el('div', { class: 'selection-bar-left' }, [selCancelBtn, selCount]),
+    el('div', { class: 'selection-bar-right' }, [selAllBtn, selActionsBtn]),
+  ]);
 
   const listEl = el('div', { class: 'card list-card' });
   container.appendChild(tabsEl);
   container.appendChild(filterRow);
+  container.appendChild(selectionBar);
   container.appendChild(listEl);
 
   const addFab = fab({ label: 'Aggiungi alla dispensa', onClick: () => openAddForm() });
   container.appendChild(addFab);
+
+  function updateSelectionUI() {
+    const active = selection.isActive();
+    selectionBar.hidden = !active;
+    tabsEl.hidden = active;
+    filterRow.hidden = active;
+    addFab.hidden = active;
+    selCount.textContent = `${selection.count()} selezionati`;
+    selActionsBtn.disabled = selection.count() === 0;
+  }
+
+  function selectAllShown() {
+    for (const it of lastRendered) if (!selection.has(it.id)) selection.toggle(it.id);
+  }
+
+  async function openBulkActions() {
+    const ids = selection.ids();
+    if (ids.length === 0) return;
+    const choice = await openSheet({
+      title: `${ids.length} elementi selezionati`,
+      items: [
+        { label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' },
+        { label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' },
+        { label: 'Rimuovi dalla dispensa', icon: '🗑️', value: 'remove', danger: true },
+      ],
+    });
+    if (!choice) return;
+
+    if (choice === 'toList') {
+      const n = await voicesToList('pantry', ids);
+      toast(`Aggiunti ${n} alla spesa`, 'success');
+      selection.exit();
+    } else if (choice === 'toWish') {
+      const n = await voicesToWishlist('pantry', ids);
+      toast(`Aggiunti ${n} ai desideri`, 'success');
+      selection.exit();
+    } else if (choice === 'remove') {
+      const n = await removePantryItemsMany(ids);
+      toast(`Rimossi ${n} elementi`, 'success');
+      selection.exit();
+    }
+  }
 
   // --- Add / edit panel.
   // mode 'add': resolves a product from a typed name, then merges into the pantry.
@@ -234,6 +301,7 @@ export function render(container) {
       items.push({ label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' });
       items.push({ label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' });
     }
+    items.push({ label: 'Seleziona più elementi', icon: '☑️', value: 'select' });
     items.push({ label: 'Rimuovi', icon: '🗑️', value: 'remove', danger: true });
 
     const choice = await openSheet({ title: product ? product.name : '(prodotto eliminato)', items });
@@ -245,6 +313,8 @@ export function render(container) {
     } else if (choice === 'toWish') {
       await ensureWishlistRef(item.productId);
       toast('Aggiunto ai desideri', 'success');
+    } else if (choice === 'select') {
+      selection.enter(item.id);
     } else if (choice === 'remove') {
       await removePantryItem(item.id);
     }
@@ -276,17 +346,37 @@ export function render(container) {
     const chip = expiryChip(item.expiry);
     if (chip) main.appendChild(el('div', { class: 'row-chips' }, [chip]));
 
-    const kebab = el(
-      'button',
-      { type: 'button', class: 'kebab-btn', 'aria-label': 'Azioni', onClick: () => openRowMenu(item, product) },
-      '⋮'
-    );
+    const selMode = selection.isActive();
+    const selected = selection.has(item.id);
 
-    return el('div', { class: 'row' }, [main, kebab]);
+    const children = [];
+    if (selMode) {
+      children.push(el('span', { class: `sel-check${selected ? ' checked' : ''}`, 'aria-hidden': 'true' }, selected ? '✓' : ''));
+    }
+    children.push(main);
+    if (!selMode) {
+      children.push(el('button', { type: 'button', class: 'kebab-btn', 'aria-label': 'Azioni', onClick: () => openRowMenu(item, product) }, '⋮'));
+    }
+
+    const row = el('div', { class: `row${selMode && selected ? ' row-selected' : ''}` }, children);
+    if (selMode) {
+      row.addEventListener('click', () => selection.toggle(item.id));
+    } else {
+      longPressDetachers.push(attachLongPress(row, () => selection.enter(item.id)));
+    }
+    return row;
+  }
+
+  function clearLongPress() {
+    while (longPressDetachers.length) {
+      const d = longPressDetachers.pop();
+      try { d(); } catch (_) { /* noop */ }
+    }
   }
 
   // --- Render list ---
   async function renderList() {
+    clearLongPress();
     let items = await getAllPantry();
     if (activeTab !== 'tutti') items = items.filter((i) => i.location === activeTab);
     if (onlyExpiring) {
@@ -298,6 +388,7 @@ export function render(container) {
 
     listEl.textContent = '';
     if (items.length === 0) {
+      lastRendered = [];
       const msg = onlyExpiring ? 'Niente in scadenza.' : 'Niente qui.';
       listEl.appendChild(
         el('div', { class: 'empty' }, [
@@ -317,6 +408,7 @@ export function render(container) {
       if (ra !== rb) return ra - rb;
       return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
     });
+    lastRendered = items;
 
     for (const item of items) {
       const product = await getProduct(item.productId); // may be undefined -> orphaned
@@ -328,11 +420,13 @@ export function render(container) {
     if (payload.store === 'pantry' || payload.store === 'products') renderList();
   });
 
+  updateSelectionUI();
   renderList();
 
   return {
     destroy() {
       unsubscribe();
+      clearLongPress();
     },
   };
 }

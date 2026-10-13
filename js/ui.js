@@ -379,6 +379,110 @@ export function qtyEditor({ value = null, unit = null } = {}) {
   };
 }
 
+// ----- selectionController() — reusable multi-select mode for list views ------
+// Manages a Set of selected ids and a "selection mode" flag. The view calls:
+//   enter(id?)     -> turn on selection mode (optionally pre-selecting one id)
+//   exit()         -> turn off and clear
+//   toggle(id)     -> select/deselect one id
+//   isActive()     -> selection mode on?
+//   has(id)        -> id selected?
+//   ids()          -> array of selected ids
+//   count()        -> number selected
+// It takes an onChange() callback fired whenever mode/selection changes, so the
+// view can re-render rows and the selection action bar. Pure state; no DOM.
+export function selectionController(onChange) {
+  let active = false;
+  const sel = new Set();
+  const fire = () => { if (typeof onChange === 'function') onChange(); };
+
+  return {
+    enter(id) {
+      active = true;
+      if (id != null) sel.add(id);
+      fire();
+    },
+    exit() {
+      active = false;
+      sel.clear();
+      fire();
+    },
+    toggle(id) {
+      if (sel.has(id)) sel.delete(id);
+      else sel.add(id);
+      // Leaving zero selected keeps mode on (user can still pick); the view may
+      // choose to auto-exit — it decides in its onChange.
+      fire();
+    },
+    isActive: () => active,
+    has: (id) => sel.has(id),
+    ids: () => Array.from(sel),
+    count: () => sel.size,
+  };
+}
+
+// ----- attachLongPress(el, onLongPress, ms=500) --------------------------------
+// Fires onLongPress() after a press held ms milliseconds without much movement.
+// Works for touch and mouse. Returns a detach() to remove listeners. Cancels on
+// move/scroll so it never hijacks a drag/scroll gesture.
+export function attachLongPress(node, onLongPress, ms = 500) {
+  let timer = null;
+  let startX = 0;
+  let startY = 0;
+  const MOVE_TOLERANCE = 10;
+
+  function start(x, y) {
+    startX = x;
+    startY = y;
+    clearTimer();
+    timer = setTimeout(() => {
+      timer = null;
+      if (typeof onLongPress === 'function') onLongPress();
+    }, ms);
+  }
+  function clearTimer() {
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+  function onTouchStart(e) {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    start(t.clientX, t.clientY);
+  }
+  function onTouchMove(e) {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    if (Math.abs(t.clientX - startX) > MOVE_TOLERANCE || Math.abs(t.clientY - startY) > MOVE_TOLERANCE) {
+      clearTimer();
+    }
+  }
+  function onMouseDown(e) { start(e.clientX, e.clientY); }
+  function onMouseMove(e) {
+    if (Math.abs(e.clientX - startX) > MOVE_TOLERANCE || Math.abs(e.clientY - startY) > MOVE_TOLERANCE) {
+      clearTimer();
+    }
+  }
+
+  node.addEventListener('touchstart', onTouchStart, { passive: true });
+  node.addEventListener('touchmove', onTouchMove, { passive: true });
+  node.addEventListener('touchend', clearTimer);
+  node.addEventListener('touchcancel', clearTimer);
+  node.addEventListener('mousedown', onMouseDown);
+  node.addEventListener('mousemove', onMouseMove);
+  node.addEventListener('mouseup', clearTimer);
+  node.addEventListener('mouseleave', clearTimer);
+
+  return function detach() {
+    clearTimer();
+    node.removeEventListener('touchstart', onTouchStart);
+    node.removeEventListener('touchmove', onTouchMove);
+    node.removeEventListener('touchend', clearTimer);
+    node.removeEventListener('touchcancel', clearTimer);
+    node.removeEventListener('mousedown', onMouseDown);
+    node.removeEventListener('mousemove', onMouseMove);
+    node.removeEventListener('mouseup', clearTimer);
+    node.removeEventListener('mouseleave', clearTimer);
+  };
+}
+
 // ----- nameField({label, placeholder, onPick}) --------------------------------
 // A labelled name input with product autocomplete wired in. Returns
 // { element, inputEl, detach, value() }. onPick(product) fires when a suggestion

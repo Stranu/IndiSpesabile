@@ -1,6 +1,5 @@
 # Test locale di IndiSpesabile
 
-Guida rapida per provare l'app in locale senza deployare su GitHub Pages ogni volta.
 Richiede Node (già installato: v24).
 
 ## Avvio del server statico
