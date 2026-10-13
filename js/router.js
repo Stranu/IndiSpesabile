@@ -81,6 +81,13 @@ export function startRouter(routes, { mount }) {
   render();
 }
 
+// refresh() — re-render the current route in place (tears down + rebuilds the
+// current view). Used after an auth state change so the mounted section reflects
+// the new session immediately, without waiting for a store write to arrive.
+export function refresh() {
+  if (_routes && _mount) render();
+}
+
 // navigate(path) — sets location.hash (triggers hashchange -> render).
 export function navigate(path) {
   const target = '#' + path;

@@ -5,7 +5,7 @@ import { openDB, onChange } from './db.js';
 import { getMeta, setMeta, countListToBuy, countExpiring } from './store.js';
 import { onAuthStateChange, getSession } from './supabase.js';
 import * as sync from './sync.js';
-import { startRouter } from './router.js';
+import { startRouter, refresh as refreshRoute } from './router.js';
 import { openModal, toast } from './ui.js';
 import { render as renderSpesa } from './views/spesa.js';
 import { render as renderDispensa } from './views/dispensa.js';
@@ -119,20 +119,33 @@ async function main() {
     updateChip(session);
 
     if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
-      const prev = await getMeta('lastSyncUser');
-      if (prev != null && prev !== session.user.id) {
-        // Account switch: clear domain stores + reset cursors + set lastSyncUser, THEN fullSync.
-        await sync.switchAccount(session.user.id); // runs fullSync internally
-      } else {
-        await setMeta('lastSyncUser', session.user.id);
-        await sync.fullSync();
+      // Sync must never block the UI refresh: even if it throws (server down,
+      // tables missing), we still reflect the new session in the view below.
+      try {
+        const prev = await getMeta('lastSyncUser');
+        if (prev != null && prev !== session.user.id) {
+          // Account switch: clear domain stores + reset cursors + set lastSyncUser, THEN fullSync.
+          await sync.switchAccount(session.user.id); // runs fullSync internally
+        } else {
+          await setMeta('lastSyncUser', session.user.id);
+          await sync.fullSync();
+        }
+        // Keep a shared account fresh with the periodic auto-pull.
+        sync.startAutoPull();
+      } catch (e) {
+        console.warn('auth SIGNED_IN sync failed', e);
       }
-      // Keep a shared account fresh with the periodic auto-pull.
-      sync.startAutoPull();
+      // Re-render the current section + badges so a fresh login is reflected
+      // immediately, even if the pull brought no new rows (no db.onChange fired)
+      // or the sync failed above.
+      refreshRoute();
+      refreshBadges();
     } else if (event === 'SIGNED_OUT') {
       // Keep local data/cursors; leave lastSyncUser. Stop polling, flag offline.
       sync.stopAutoPull();
       renderStatus({ status: 'offline' });
+      refreshRoute();
+      refreshBadges();
     }
   });
 
