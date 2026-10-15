@@ -330,15 +330,15 @@ export function render(container) {
 
     longPressDetachers.push(attachLongPress(row, () => selection.enter(voice.id)));
 
-    // Swipe: right = mark bought (only for not-yet-bought, non-orphan rows),
-    // left = discard. Orphan rows can still be discarded.
+    // Swipe: right toggles bought state (not-bought -> "Comprato",
+    // bought -> "Da comprare"); left = discard. Orphan rows: only discard.
     const sw = swipeRow(row, {
       onSwipeLeft: () => discardListItem(voice.id),
-      onSwipeRight: (!orphaned && !voice.bought) ? () => markBought(voice.id, true) : undefined,
+      onSwipeRight: orphaned ? undefined : () => markBought(voice.id, !voice.bought),
       leftLabel: 'Elimina',
       leftIcon: '🗑️',
-      rightLabel: 'Comprato',
-      rightIcon: '✅',
+      rightLabel: voice.bought ? 'Da comprare' : 'Comprato',
+      rightIcon: voice.bought ? '↩️' : '✅',
     });
     swipeDetachers.push(sw.detach);
     return sw.element;
