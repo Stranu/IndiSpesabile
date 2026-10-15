@@ -20,10 +20,11 @@ import {
   voicesToWishlist,
   ensureListRef,
   ensureWishlistRef,
+  getProductMembership,
 } from '../store.js';
 import {
   el, toast, openSheet, openModal, openRenameProduct, qtyEditor, nameField, fab,
-  selectionController, attachLongPress, swipeRow,
+  selectionController, attachLongPress, swipeRow, membershipBadges,
 } from '../ui.js';
 import { formatQty } from '../units.js';
 
@@ -48,6 +49,7 @@ export function render(container) {
   let activeTab = 'frigo'; // default Frigo
   let onlyExpiring = false;
   let lastRendered = [];
+  let membership = null; // cross-section presence (loaded per render)
   const longPressDetachers = [];
   const swipeDetachers = [];
 
@@ -339,6 +341,10 @@ export function render(container) {
     titleBits.push(
       el('span', { class: 'row-title-text' }, orphaned ? '(prodotto eliminato)' : product.name)
     );
+    // Presence badges: show where else this product appears (not the pantry itself).
+    if (!orphaned) {
+      for (const b of membershipBadges(item.productId, membership, 'pantry')) titleBits.push(b);
+    }
     const title = el('div', { class: `row-title${orphaned ? ' orphaned' : ''}` }, titleBits);
     const main = el('div', { class: 'row-main' }, [title]);
 
@@ -418,6 +424,7 @@ export function render(container) {
 
   async function renderListOnce() {
     clearLongPress();
+    membership = await getProductMembership();
     let items = await getAllPantry();
     if (activeTab !== 'tutti') items = items.filter((i) => i.location === activeTab);
     if (onlyExpiring) {
@@ -457,8 +464,17 @@ export function render(container) {
     }
   }
 
+  // Re-render on pantry/product changes AND on list/wishlist changes, since the
+  // presence badges reflect membership in those other sections too.
   const unsubscribe = db.onChange((payload) => {
-    if (payload.store === 'pantry' || payload.store === 'products') renderList();
+    if (
+      payload.store === 'pantry' ||
+      payload.store === 'products' ||
+      payload.store === 'list' ||
+      payload.store === 'wishlist'
+    ) {
+      renderList();
+    }
   });
 
   updateSelectionUI();

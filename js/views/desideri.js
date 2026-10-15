@@ -18,14 +18,16 @@ import {
   voicesToPantry,
   mergePantryQuantity,
   updateProduct,
+  getProductMembership,
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, openModal, openRenameProduct, nameField, fab,
-  selectionController, attachLongPress, swipeRow,
+  selectionController, attachLongPress, swipeRow, membershipBadges,
 } from '../ui.js';
 
 export function render(container) {
   let lastRendered = [];
+  let membership = null; // cross-section presence (loaded per render)
   const longPressDetachers = [];
   const swipeDetachers = [];
 
@@ -170,11 +172,14 @@ export function render(container) {
     const selMode = selection.isActive();
     const selected = selection.has(item.id);
 
-    const title = el(
-      'div',
-      { class: `row-title${orphaned ? ' orphaned' : ''}` },
-      orphaned ? '(prodotto eliminato)' : product.name
-    );
+    const titleBits = [
+      el('span', { class: 'row-title-text' }, orphaned ? '(prodotto eliminato)' : product.name),
+    ];
+    // Presence badges: show where else this product appears (not the wishlist itself).
+    if (!orphaned) {
+      for (const b of membershipBadges(item.productId, membership, 'wishlist')) titleBits.push(b);
+    }
+    const title = el('div', { class: `row-title${orphaned ? ' orphaned' : ''} has-badges` }, titleBits);
     const main = el('div', { class: 'row-main' }, [title]);
 
     const children = [];
@@ -240,6 +245,7 @@ export function render(container) {
 
   async function renderListOnce() {
     clearLongPress();
+    membership = await getProductMembership();
     const items = await getAllWishlist();
     items.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
     lastRendered = items;
@@ -261,8 +267,17 @@ export function render(container) {
     }
   }
 
+  // Re-render on wishlist/product changes AND on list/pantry changes, since the
+  // presence badges reflect membership in those other sections too.
   const unsubscribe = db.onChange((payload) => {
-    if (payload.store === 'wishlist' || payload.store === 'products') renderList();
+    if (
+      payload.store === 'wishlist' ||
+      payload.store === 'products' ||
+      payload.store === 'list' ||
+      payload.store === 'pantry'
+    ) {
+      renderList();
+    }
   });
 
   updateSelectionUI();

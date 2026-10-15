@@ -1145,10 +1145,19 @@ select {
 /* Only pantry rows wrap the title in .sev-icon + .row-title-text; make the
    title a flex row only in that case so the plain-text titles elsewhere keep
    their own ellipsis behaviour. */
-.row-title:has(.sev-icon) {
+.row-title:has(.sev-icon),
+.row-title.has-badges {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+}
+
+/* Cross-section presence badges (🛒 in spesa, 🧺 in dispensa, ⭐ nei desideri). */
+.presence-badge {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  line-height: 1;
+  opacity: 0.85;
 }
 
 .sev-icon {

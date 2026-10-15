@@ -137,6 +137,23 @@ export async function getAllWishlist() {
   return (await db.getAll('wishlist')).filter((v) => v.deleted === false);
 }
 
+// getProductMembership() — for cross-section presence badges. Returns three Sets
+// of productId: which products currently appear (live, non-deleted) in the
+// shopping list, the pantry, and the wishlist. Views load this once per render
+// and look up each row's productId in O(1).
+export async function getProductMembership() {
+  const [list, pantry, wishlist] = await Promise.all([
+    getAllList(),
+    getAllPantry(),
+    getAllWishlist(),
+  ]);
+  return {
+    inList: new Set(list.map((v) => v.productId)),
+    inPantry: new Set(pantry.map((v) => v.productId)),
+    inWishlist: new Set(wishlist.map((v) => v.productId)),
+  };
+}
+
 // ----- touchProduct (internal, §5 / §7) --------------------------------------
 // Bumps updatedAt for autocomplete recency. No-op if product missing or deleted.
 // Called by EXACTLY: getOrCreateProduct (existing hit), ensureListRef, ensureWishlistRef,

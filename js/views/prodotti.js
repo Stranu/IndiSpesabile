@@ -19,16 +19,18 @@ import {
   toggleRecurring,
   updateProduct,
   getOrCreateProduct,
+  getProductMembership,
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, confirmSheet, openModal, openRenameProduct, fab,
-  selectionController, attachLongPress, swipeRow,
+  selectionController, attachLongPress, swipeRow, membershipBadges,
 } from '../ui.js';
 
 export function render(container) {
   let query = '';
   let onlyRecurring = false;
   let lastRendered = []; // products currently shown (for "seleziona tutti")
+  let membership = null; // cross-section presence (loaded per render)
   const longPressDetachers = [];
   const swipeDetachers = [];
 
@@ -255,7 +257,10 @@ export function render(container) {
     const selMode = selection.isActive();
     const selected = selection.has(product.id);
 
-    const title = el('div', { class: 'row-title' }, product.name);
+    const titleBits = [el('span', { class: 'row-title-text' }, product.name)];
+    // Presence badges: catalog shows all three (spesa 🛒, dispensa 🧺, desideri ⭐).
+    for (const b of membershipBadges(product.id, membership, null)) titleBits.push(b);
+    const title = el('div', { class: 'row-title has-badges' }, titleBits);
     const main = el('div', { class: 'row-main' }, [title]);
     if (product.recurring) {
       main.appendChild(el('div', { class: 'row-chips' }, [el('span', { class: 'tag recurring' }, '🔁 Ricorrente')]));
@@ -341,6 +346,7 @@ export function render(container) {
 
   async function renderListOnce() {
     clearLongPress();
+    membership = await getProductMembership();
     let products = await getAllProducts();
     const q = normalizeName(query);
     if (q !== '') products = products.filter((p) => p.nameLower.includes(q));
@@ -365,8 +371,17 @@ export function render(container) {
     for (const product of products) listEl.appendChild(buildRow(product));
   }
 
+  // Re-render on product changes AND on list/pantry/wishlist changes, since the
+  // presence badges depend on membership in those other sections.
   const unsubscribe = db.onChange((payload) => {
-    if (payload.store === 'products') renderList();
+    if (
+      payload.store === 'products' ||
+      payload.store === 'list' ||
+      payload.store === 'pantry' ||
+      payload.store === 'wishlist'
+    ) {
+      renderList();
+    }
   });
 
   updateSelectionUI();

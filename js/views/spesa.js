@@ -23,15 +23,17 @@ import {
   clearBoughtListItems,
   listItemToPantry,
   listItemsToPantryMany,
+  getProductMembership,
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, openModal, openRenameProduct, confirmSheet, qtyEditor, nameField, fab,
-  selectionController, attachLongPress, swipeRow,
+  selectionController, attachLongPress, swipeRow, membershipBadges,
 } from '../ui.js';
 import { formatQty } from '../units.js';
 
 export function render(container) {
   let lastRendered = [];
+  let membership = null; // cross-section presence (loaded per render)
   const longPressDetachers = [];
   const swipeDetachers = [];
 
@@ -303,11 +305,15 @@ export function render(container) {
     const selMode = selection.isActive();
     const selected = selection.has(voice.id);
 
-    const title = el(
-      'div',
-      { class: `row-title${orphaned ? ' orphaned' : ''}` },
-      orphaned ? '(prodotto eliminato)' : product.name
-    );
+    const titleBits = [
+      el('span', { class: 'row-title-text' }, orphaned ? '(prodotto eliminato)' : product.name),
+    ];
+    // Presence badges: show if this product is also in pantry (🧺) or wishlist (⭐).
+    // The shopping-list badge itself is omitted (we're in the shopping list).
+    if (!orphaned) {
+      for (const b of membershipBadges(voice.productId, membership, 'list')) titleBits.push(b);
+    }
+    const title = el('div', { class: `row-title${orphaned ? ' orphaned' : ''} has-badges` }, titleBits);
     const main = el('div', { class: 'row-main' }, [title]);
 
     const qtyStr = formatQty(voice.qtyValue, voice.qtyUnit);
@@ -378,6 +384,7 @@ export function render(container) {
 
   async function renderListOnce() {
     clearLongPress();
+    membership = await getProductMembership();
     const voices = await getAllList();
 
     // "Svuota comprati"/"Seleziona" bar: shown when there are items and NOT selecting.
@@ -412,8 +419,17 @@ export function render(container) {
     }
   }
 
+  // Re-render on list/product changes AND on pantry/wishlist changes, since the
+  // presence badges reflect membership in those other sections too.
   const unsubscribe = db.onChange((payload) => {
-    if (payload.store === 'list' || payload.store === 'products') renderList();
+    if (
+      payload.store === 'list' ||
+      payload.store === 'products' ||
+      payload.store === 'pantry' ||
+      payload.store === 'wishlist'
+    ) {
+      renderList();
+    }
   });
 
   updateSelectionUI();

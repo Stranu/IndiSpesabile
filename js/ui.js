@@ -621,6 +621,29 @@ export function attachLongPress(node, onLongPress, ms = 500) {
   };
 }
 
+// ----- membershipBadges(productId, membership, exclude) -----------------------
+// Returns an array of small presence-badge spans showing which OTHER lists a
+// product also appears in: 🛒 shopping list, 🧺 pantry, ⭐ wishlist.
+// `membership` is store.getProductMembership() output; `exclude` is the current
+// section ('list' | 'pantry' | 'wishlist') whose own badge is omitted (it would
+// be redundant). Returns [] when the product is in no other list.
+export function membershipBadges(productId, membership, exclude) {
+  if (!membership) return [];
+  const defs = [
+    { key: 'list', set: membership.inList, icon: '🛒', label: 'In lista della spesa' },
+    { key: 'pantry', set: membership.inPantry, icon: '🧺', label: 'In dispensa' },
+    { key: 'wishlist', set: membership.inWishlist, icon: '⭐', label: 'Nei desideri' },
+  ];
+  const out = [];
+  for (const d of defs) {
+    if (d.key === exclude) continue;
+    if (d.set && d.set.has(productId)) {
+      out.push(el('span', { class: 'presence-badge', title: d.label, 'aria-label': d.label }, d.icon));
+    }
+  }
+  return out;
+}
+
 // ----- openRenameProduct(currentName, onSave) ---------------------------------
 // Reusable "rename product" modal shared by every section. Shows a text field
 // pre-filled with the current name; on Save (non-empty, changed) calls
