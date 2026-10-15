@@ -483,6 +483,55 @@ export function attachLongPress(node, onLongPress, ms = 500) {
   };
 }
 
+// ----- openRenameProduct(currentName, onSave) ---------------------------------
+// Reusable "rename product" modal shared by every section. Shows a text field
+// pre-filled with the current name; on Save (non-empty, changed) calls
+// onSave(newName) and closes. onSave should perform the actual store update
+// (store.updateProduct), which renames the product everywhere it is referenced.
+export function openRenameProduct(currentName, onSave) {
+  const input = el('input', {
+    type: 'text',
+    class: 'input',
+    value: currentName || '',
+    placeholder: 'Nome prodotto…',
+    autocomplete: 'off',
+    'aria-label': 'Nuovo nome',
+  });
+  const content = el('div', {}, [
+    el('div', { class: 'field' }, [
+      el('span', { class: 'field-label' }, 'Nome'),
+      input,
+    ]),
+  ]);
+  openModal({
+    title: 'Rinomina prodotto',
+    content,
+    actions: [
+      { label: 'Annulla', onClick: (close) => close() },
+      {
+        label: 'Salva',
+        primary: true,
+        onClick: async (close) => {
+          const name = input.value.trim();
+          if (name === '') {
+            toast('Inserisci un nome', 'info');
+            return;
+          }
+          if (name === (currentName || '').trim()) {
+            close();
+            return;
+          }
+          if (typeof onSave === 'function') await onSave(name);
+          close();
+          toast('Nome aggiornato', 'success');
+        },
+      },
+    ],
+  });
+  input.focus();
+  input.select();
+}
+
 // ----- nameField({label, placeholder, onPick}) --------------------------------
 // A labelled name input with product autocomplete wired in. Returns
 // { element, inputEl, detach, value() }. onPick(product) fires when a suggestion

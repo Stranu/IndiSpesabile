@@ -17,9 +17,10 @@ import {
   voicesToList,
   voicesToPantry,
   mergePantryQuantity,
+  updateProduct,
 } from '../store.js';
 import {
-  el, toast, openSheet, openChoice, openModal, nameField, fab,
+  el, toast, openSheet, openChoice, openModal, openRenameProduct, nameField, fab,
   selectionController, attachLongPress,
 } from '../ui.js';
 
@@ -132,6 +133,7 @@ export function render(container) {
   async function openRowMenu(item, product) {
     const orphaned = product === undefined;
     const items = [
+      { label: 'Modifica nome', icon: '✏️', value: 'rename' },
       { label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' },
       { label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' },
       { label: 'Seleziona più elementi', icon: '☑️', value: 'select' },
@@ -140,7 +142,9 @@ export function render(container) {
     const menuItems = orphaned ? items.filter((i) => i.value === 'remove' || i.value === 'select') : items;
 
     const choice = await openSheet({ title: product ? product.name : '(prodotto eliminato)', items: menuItems });
-    if (choice === 'toList') {
+    if (choice === 'rename') {
+      if (product) openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
+    } else if (choice === 'toList') {
       await ensureListRef(item.productId);
       toast('Aggiunto alla spesa', 'success');
     } else if (choice === 'toPantry') {
@@ -197,7 +201,25 @@ export function render(container) {
     }
   }
 
+  // Concurrency guard (see spesa.js): prevents overlapping async renders from
+  // duplicating rows when a single mutation fires multiple db.onChange events.
+  let _rendering = false;
+  let _renderPending = false;
   async function renderList() {
+    if (_rendering) { _renderPending = true; return; }
+    _rendering = true;
+    try {
+      await renderListOnce();
+    } finally {
+      _rendering = false;
+      if (_renderPending) {
+        _renderPending = false;
+        renderList();
+      }
+    }
+  }
+
+  async function renderListOnce() {
     clearLongPress();
     const items = await getAllWishlist();
     items.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));

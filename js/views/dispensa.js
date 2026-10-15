@@ -13,6 +13,7 @@ import {
   expiryLevel,
   mergePantryQuantity,
   updatePantryItem,
+  updateProduct,
   removePantryItem,
   removePantryItemsMany,
   voicesToList,
@@ -21,7 +22,7 @@ import {
   ensureWishlistRef,
 } from '../store.js';
 import {
-  el, toast, openSheet, openModal, qtyEditor, nameField, fab,
+  el, toast, openSheet, openModal, openRenameProduct, qtyEditor, nameField, fab,
   selectionController, attachLongPress,
 } from '../ui.js';
 import { formatQty } from '../units.js';
@@ -297,7 +298,8 @@ export function render(container) {
     const orphaned = product === undefined;
     const items = [];
     if (!orphaned) {
-      items.push({ label: 'Modifica (quantità / scadenza)', icon: '✏️', value: 'edit' });
+      items.push({ label: 'Modifica (quantità / scadenza)', icon: '🔢', value: 'edit' });
+      items.push({ label: 'Modifica nome', icon: '✏️', value: 'rename' });
       items.push({ label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' });
       items.push({ label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' });
     }
@@ -307,6 +309,8 @@ export function render(container) {
     const choice = await openSheet({ title: product ? product.name : '(prodotto eliminato)', items });
     if (choice === 'edit') {
       openEditForm(item, product);
+    } else if (choice === 'rename') {
+      if (product) openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
     } else if (choice === 'toList') {
       await ensureListRef(item.productId);
       toast('Aggiunto alla spesa', 'success');
@@ -375,7 +379,25 @@ export function render(container) {
   }
 
   // --- Render list ---
+  // Concurrency guard (see spesa.js): prevents overlapping async renders from
+  // duplicating rows when a single mutation fires multiple db.onChange events.
+  let _rendering = false;
+  let _renderPending = false;
   async function renderList() {
+    if (_rendering) { _renderPending = true; return; }
+    _rendering = true;
+    try {
+      await renderListOnce();
+    } finally {
+      _rendering = false;
+      if (_renderPending) {
+        _renderPending = false;
+        renderList();
+      }
+    }
+  }
+
+  async function renderListOnce() {
     clearLongPress();
     let items = await getAllPantry();
     if (activeTab !== 'tutti') items = items.filter((i) => i.location === activeTab);

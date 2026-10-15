@@ -17,10 +17,11 @@ import {
   ensureWishlistRef,
   mergePantryQuantity,
   toggleRecurring,
+  updateProduct,
   getOrCreateProduct,
 } from '../store.js';
 import {
-  el, toast, openSheet, openChoice, confirmSheet, openModal, fab,
+  el, toast, openSheet, openChoice, confirmSheet, openModal, openRenameProduct, fab,
   selectionController, attachLongPress,
 } from '../ui.js';
 
@@ -208,12 +209,15 @@ export function render(container) {
         { label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' },
         { label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' },
         { label: product.recurring ? 'Togli dai ricorrenti' : 'Aggiungi ai ricorrenti', icon: '🔁', value: 'recurring' },
+        { label: 'Modifica nome', icon: '✏️', value: 'rename' },
         { label: 'Seleziona più elementi', icon: '☑️', value: 'select' },
         { label: 'Elimina', icon: '🗑️', value: 'delete', danger: true },
       ],
     });
 
-    if (choice === 'toList') {
+    if (choice === 'rename') {
+      openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
+    } else if (choice === 'toList') {
       await ensureListRef(product.id);
       toast('Aggiunto alla spesa', 'success');
     } else if (choice === 'toWish') {
@@ -291,7 +295,25 @@ export function render(container) {
     }
   }
 
+  // Concurrency guard (see spesa.js): prevents overlapping async renders from
+  // duplicating rows when a single mutation fires multiple db.onChange events.
+  let _rendering = false;
+  let _renderPending = false;
   async function renderList() {
+    if (_rendering) { _renderPending = true; return; }
+    _rendering = true;
+    try {
+      await renderListOnce();
+    } finally {
+      _rendering = false;
+      if (_renderPending) {
+        _renderPending = false;
+        renderList();
+      }
+    }
+  }
+
+  async function renderListOnce() {
     clearLongPress();
     let products = await getAllProducts();
     const q = normalizeName(query);

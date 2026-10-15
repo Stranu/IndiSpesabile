@@ -15,6 +15,7 @@ import {
   getOrCreateProduct,
   ensureListRef,
   updateListItem,
+  updateProduct,
   markBought,
   markBoughtMany,
   discardListItem,
@@ -24,7 +25,7 @@ import {
   listItemsToPantryMany,
 } from '../store.js';
 import {
-  el, toast, openSheet, openChoice, openModal, confirmSheet, qtyEditor, nameField, fab,
+  el, toast, openSheet, openChoice, openModal, openRenameProduct, confirmSheet, qtyEditor, nameField, fab,
   selectionController, attachLongPress,
 } from '../ui.js';
 import { formatQty } from '../units.js';
@@ -262,7 +263,8 @@ export function render(container) {
       } else {
         items.push({ label: 'Segna come comprato', icon: '✅', value: 'bought' });
       }
-      items.push({ label: 'Modifica quantità', icon: '✏️', value: 'edit' });
+      items.push({ label: 'Modifica quantità', icon: '🔢', value: 'edit' });
+      items.push({ label: 'Modifica nome', icon: '✏️', value: 'rename' });
       items.push({ label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' });
     }
     items.push({ label: 'Seleziona più elementi', icon: '☑️', value: 'select' });
@@ -275,6 +277,8 @@ export function render(container) {
       await markBought(voice.id, false);
     } else if (choice === 'edit') {
       openEditQty(voice, product);
+    } else if (choice === 'rename') {
+      if (product) openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
     } else if (choice === 'select') {
       selection.enter(voice.id);
     } else if (choice === 'discard') {
@@ -334,7 +338,27 @@ export function render(container) {
   }
 
   // --- Render the whole list ---
+  // Concurrency guard: renderList is async and a single add fires multiple
+  // db.onChange events (product + voice). Without this, overlapping renders each
+  // clear + append and the list shows duplicates until reload. If a render is
+  // requested while one runs, we re-run exactly once after it finishes.
+  let _rendering = false;
+  let _renderPending = false;
   async function renderList() {
+    if (_rendering) { _renderPending = true; return; }
+    _rendering = true;
+    try {
+      await renderListOnce();
+    } finally {
+      _rendering = false;
+      if (_renderPending) {
+        _renderPending = false;
+        renderList();
+      }
+    }
+  }
+
+  async function renderListOnce() {
     clearLongPress();
     const voices = await getAllList();
 
