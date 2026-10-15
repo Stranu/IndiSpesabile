@@ -1,6 +1,7 @@
 {
   "name": "IndiSpesabile",
   "short_name": "IndiSpesabile",
+  "id": "/IndiSpesabile/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
