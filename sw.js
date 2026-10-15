@@ -5,7 +5,7 @@
  * both the §2 import graph and this PRECACHE array AND bumping CACHE_NAME.
  */
 
-const CACHE_NAME = 'spesa-cache-v9';
+const CACHE_NAME = 'spesa-cache-v10';
 
 const PRECACHE = [
   './',
@@ -27,6 +27,7 @@ const PRECACHE = [
   './js/views/desideri.js',
   './js/views/prodotti.js',
   './js/views/auth.js',
+  './js/views/other-services.js',
 ];
 
 self.addEventListener('install', (event) => {

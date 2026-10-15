@@ -12,6 +12,7 @@ import { render as renderDispensa } from './views/dispensa.js';
 import { render as renderDesideri } from './views/desideri.js';
 import { render as renderProdotti } from './views/prodotti.js';
 import { render as renderAuth } from './views/auth.js';
+import { render as renderOtherServices } from './views/other-services.js';
 
 async function main() {
   // 1) openDB guarded — on failure, show a blocking message and stop.
@@ -88,6 +89,7 @@ async function main() {
     const modal = openModal({ title: 'Account' });
     const content = renderAuth({ close: () => modal.close() });
     modal.element.appendChild(content);
+    modal.element.appendChild(renderOtherServices());
   }
 
   // The header chip shows only connection STATE, never the email (which would
