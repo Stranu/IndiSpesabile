@@ -22,7 +22,7 @@ import {
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, confirmSheet, openModal, openRenameProduct, fab,
-  selectionController, attachLongPress,
+  selectionController, attachLongPress, swipeRow,
 } from '../ui.js';
 
 export function render(container) {
@@ -30,6 +30,7 @@ export function render(container) {
   let onlyRecurring = false;
   let lastRendered = []; // products currently shown (for "seleziona tutti")
   const longPressDetachers = [];
+  const swipeDetachers = [];
 
   const selection = selectionController(() => {
     updateSelectionUI();
@@ -279,18 +280,43 @@ export function render(container) {
     if (selMode) {
       // Tapping the row toggles selection.
       row.addEventListener('click', () => selection.toggle(product.id));
-    } else {
-      // Long-press enters selection mode pre-selecting this row.
-      const detach = attachLongPress(row, () => selection.enter(product.id));
-      longPressDetachers.push(detach);
+      return row;
     }
 
-    return row;
+    // Long-press enters selection mode pre-selecting this row.
+    longPressDetachers.push(attachLongPress(row, () => selection.enter(product.id)));
+
+    // Swipe right = add to the shopping list. Swipe left = delete; deleting a
+    // catalog product is a cascade (removes it from spesa/dispensa/desideri too),
+    // so confirm even on swipe.
+    const sw = swipeRow(row, {
+      onSwipeRight: async () => { await ensureListRef(product.id); toast('Aggiunto alla spesa', 'success'); },
+      onSwipeLeft: async () => {
+        const ok = await confirmSheet(
+          `Eliminare «${product.name}»? Verrà rimosso dal catalogo e da spesa, dispensa e desideri. L'azione non è reversibile.`,
+          { okLabel: 'Elimina', danger: true }
+        );
+        if (ok) {
+          await deleteProductCascade(product.id);
+          toast('Prodotto eliminato', 'success');
+        }
+      },
+      leftLabel: 'Elimina',
+      leftIcon: '🗑️',
+      rightLabel: 'Alla spesa',
+      rightIcon: '🛒',
+    });
+    swipeDetachers.push(sw.detach);
+    return sw.element;
   }
 
   function clearLongPress() {
     while (longPressDetachers.length) {
       const d = longPressDetachers.pop();
+      try { d(); } catch (_) { /* noop */ }
+    }
+    while (swipeDetachers.length) {
+      const d = swipeDetachers.pop();
       try { d(); } catch (_) { /* noop */ }
     }
   }

@@ -918,6 +918,79 @@ select {
   font-weight: 600;
 }
 
+/* ---------- Swipe-to-action rows ---------- */
+.swipe-wrap {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The foreground row sits above the revealed background and slides with the finger. */
+.swipe-fg {
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  touch-action: pan-y; /* allow vertical scroll; we handle horizontal ourselves */
+  will-change: transform;
+}
+
+.swipe-fg.swipe-animate {
+  transition: transform 180ms ease-out;
+}
+
+/* Background holds both reveal panels, each filling the row height. */
+.swipe-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  z-index: 0;
+}
+
+.swipe-reveal {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4);
+  font-weight: 700;
+  color: #fff;
+  opacity: 0;
+  flex: 1 1 50%;
+}
+
+.swipe-reveal.visible {
+  opacity: 1;
+}
+
+/* Right-swipe (finger moves right) -> "Comprato", revealed from the LEFT edge. */
+.swipe-reveal-right {
+  justify-content: flex-start;
+  background: var(--brand);
+}
+
+/* Left-swipe (finger moves left) -> "Elimina", revealed from the RIGHT edge. */
+.swipe-reveal-left {
+  justify-content: flex-end;
+  background: var(--danger);
+}
+
+/* Armed = past the trigger threshold: full color + slight emphasis. */
+.swipe-reveal.armed {
+  filter: none;
+}
+
+.swipe-reveal:not(.armed).visible {
+  filter: brightness(0.92) saturate(0.9);
+}
+
+.swipe-ic {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.swipe-tx {
+  font-size: 0.9rem;
+  letter-spacing: 0.3px;
+}
+
 /* ---------- Multi-select mode ---------- */
 .selection-bar {
   display: flex;

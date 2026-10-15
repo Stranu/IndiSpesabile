@@ -420,6 +420,144 @@ export function selectionController(onChange) {
   };
 }
 
+// ----- swipeRow(rowEl, {onSwipeLeft, onSwipeRight, leftLabel, leftIcon, rightLabel, rightIcon}) --
+// Wraps a row element to support horizontal swipe gestures with a revealed
+// background action. Returns { element, detach } where `element` is the wrapper
+// to mount in place of the row.
+//   - Swipe LEFT  (finger moves left)  -> reveals the DESTRUCTIVE action (red
+//     trash + leftLabel) on the right side; past threshold fires onSwipeLeft().
+//   - Swipe RIGHT (finger moves right) -> reveals rightLabel/rightIcon on the
+//     left side; past threshold fires onSwipeRight(). Omit onSwipeRight to allow
+//     only left-swipe (delete).
+// The gesture only engages when horizontal movement clearly dominates vertical,
+// so it never hijacks list scrolling. Releasing before the threshold snaps back.
+export function swipeRow(rowEl, {
+  onSwipeLeft,
+  onSwipeRight,
+  leftLabel = 'Elimina',
+  leftIcon = '🗑️',
+  rightLabel = 'Comprato',
+  rightIcon = '✅',
+} = {}) {
+  const THRESHOLD = 96;         // px past which the action triggers
+  const DIRECTION_LOCK = 12;    // px of horizontal travel before we commit to a swipe
+  const allowRight = typeof onSwipeRight === 'function';
+  const allowLeft = typeof onSwipeLeft === 'function';
+
+  // Background: a right-reveal (left side) and a left-reveal (right side).
+  const rightReveal = el('div', { class: 'swipe-reveal swipe-reveal-right' }, [
+    el('span', { class: 'swipe-ic', 'aria-hidden': 'true' }, rightIcon),
+    el('span', { class: 'swipe-tx' }, rightLabel),
+  ]);
+  const leftReveal = el('div', { class: 'swipe-reveal swipe-reveal-left' }, [
+    el('span', { class: 'swipe-tx' }, leftLabel),
+    el('span', { class: 'swipe-ic', 'aria-hidden': 'true' }, leftIcon),
+  ]);
+
+  const bg = el('div', { class: 'swipe-bg' }, [rightReveal, leftReveal]);
+  rowEl.classList.add('swipe-fg');
+  const wrapper = el('div', { class: 'swipe-wrap' }, [bg, rowEl]);
+
+  let startX = 0;
+  let startY = 0;
+  let dx = 0;
+  let dragging = false;    // committed to a horizontal swipe
+  let decided = false;     // direction decided for this gesture
+
+  function setTranslate(x) {
+    rowEl.style.transform = x ? `translateX(${x}px)` : '';
+    // Reveal only the side matching the swipe direction, intensify past threshold.
+    const past = Math.abs(x) >= THRESHOLD;
+    if (x < 0) {
+      leftReveal.classList.add('visible');
+      rightReveal.classList.remove('visible');
+      leftReveal.classList.toggle('armed', past);
+    } else if (x > 0) {
+      rightReveal.classList.add('visible');
+      leftReveal.classList.remove('visible');
+      rightReveal.classList.toggle('armed', past);
+    } else {
+      leftReveal.classList.remove('visible', 'armed');
+      rightReveal.classList.remove('visible', 'armed');
+    }
+  }
+
+  function reset(animate) {
+    if (animate) rowEl.classList.add('swipe-animate');
+    setTranslate(0);
+    if (animate) {
+      setTimeout(() => rowEl.classList.remove('swipe-animate'), 200);
+    }
+    dx = 0;
+    dragging = false;
+    decided = false;
+  }
+
+  function onTouchStart(e) {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    startX = t.clientX;
+    startY = t.clientY;
+    dx = 0;
+    dragging = false;
+    decided = false;
+  }
+
+  function onTouchMove(e) {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const mx = t.clientX - startX;
+    const my = t.clientY - startY;
+
+    if (!decided) {
+      if (Math.abs(mx) < DIRECTION_LOCK && Math.abs(my) < DIRECTION_LOCK) return;
+      // Commit to horizontal only if clearly more horizontal than vertical.
+      if (Math.abs(mx) > Math.abs(my)) {
+        dragging = true;
+      }
+      decided = true;
+      if (!dragging) return; // vertical scroll — leave it alone
+    }
+    if (!dragging) return;
+
+    // Clamp to allowed directions.
+    let x = mx;
+    if (x > 0 && !allowRight) x = 0;
+    if (x < 0 && !allowLeft) x = 0;
+    // A little resistance past threshold.
+    dx = x;
+    rowEl.classList.remove('swipe-animate');
+    setTranslate(x);
+  }
+
+  function onTouchEnd() {
+    if (!dragging) { reset(false); return; }
+    if (dx <= -THRESHOLD && allowLeft) {
+      onSwipeLeft();
+      reset(true);
+    } else if (dx >= THRESHOLD && allowRight) {
+      onSwipeRight();
+      reset(true);
+    } else {
+      reset(true);
+    }
+  }
+
+  rowEl.addEventListener('touchstart', onTouchStart, { passive: true });
+  rowEl.addEventListener('touchmove', onTouchMove, { passive: true });
+  rowEl.addEventListener('touchend', onTouchEnd);
+  rowEl.addEventListener('touchcancel', () => reset(true));
+
+  function detach() {
+    rowEl.removeEventListener('touchstart', onTouchStart);
+    rowEl.removeEventListener('touchmove', onTouchMove);
+    rowEl.removeEventListener('touchend', onTouchEnd);
+    rowEl.removeEventListener('touchcancel', reset);
+  }
+
+  return { element: wrapper, detach };
+}
+
 // ----- attachLongPress(el, onLongPress, ms=500) --------------------------------
 // Fires onLongPress() after a press held ms milliseconds without much movement.
 // Works for touch and mouse. Returns a detach() to remove listeners. Cancels on

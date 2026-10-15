@@ -26,13 +26,14 @@ import {
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, openModal, openRenameProduct, confirmSheet, qtyEditor, nameField, fab,
-  selectionController, attachLongPress,
+  selectionController, attachLongPress, swipeRow,
 } from '../ui.js';
 import { formatQty } from '../units.js';
 
 export function render(container) {
   let lastRendered = [];
   const longPressDetachers = [];
+  const swipeDetachers = [];
 
   const selection = selectionController(() => {
     updateSelectionUI();
@@ -324,15 +325,32 @@ export function render(container) {
     const row = el('div', { class: `row${voice.bought ? ' bought' : ''}${selMode && selected ? ' row-selected' : ''}` }, children);
     if (selMode) {
       row.addEventListener('click', () => selection.toggle(voice.id));
-    } else {
-      longPressDetachers.push(attachLongPress(row, () => selection.enter(voice.id)));
+      return row;
     }
-    return row;
+
+    longPressDetachers.push(attachLongPress(row, () => selection.enter(voice.id)));
+
+    // Swipe: right = mark bought (only for not-yet-bought, non-orphan rows),
+    // left = discard. Orphan rows can still be discarded.
+    const sw = swipeRow(row, {
+      onSwipeLeft: () => discardListItem(voice.id),
+      onSwipeRight: (!orphaned && !voice.bought) ? () => markBought(voice.id, true) : undefined,
+      leftLabel: 'Elimina',
+      leftIcon: '🗑️',
+      rightLabel: 'Comprato',
+      rightIcon: '✅',
+    });
+    swipeDetachers.push(sw.detach);
+    return sw.element;
   }
 
   function clearLongPress() {
     while (longPressDetachers.length) {
       const d = longPressDetachers.pop();
+      try { d(); } catch (_) { /* noop */ }
+    }
+    while (swipeDetachers.length) {
+      const d = swipeDetachers.pop();
       try { d(); } catch (_) { /* noop */ }
     }
   }

@@ -21,12 +21,13 @@ import {
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, openModal, openRenameProduct, nameField, fab,
-  selectionController, attachLongPress,
+  selectionController, attachLongPress, swipeRow,
 } from '../ui.js';
 
 export function render(container) {
   let lastRendered = [];
   const longPressDetachers = [];
+  const swipeDetachers = [];
 
   const selection = selectionController(() => {
     updateSelectionUI();
@@ -188,15 +189,33 @@ export function render(container) {
     const row = el('div', { class: `row${selMode && selected ? ' row-selected' : ''}` }, children);
     if (selMode) {
       row.addEventListener('click', () => selection.toggle(item.id));
-    } else {
-      longPressDetachers.push(attachLongPress(row, () => selection.enter(item.id)));
+      return row;
     }
-    return row;
+
+    longPressDetachers.push(attachLongPress(row, () => selection.enter(item.id)));
+
+    // Swipe left = remove from wishlist; swipe right = add to the shopping list.
+    const sw = swipeRow(row, {
+      onSwipeLeft: () => removeWishlistItem(item.id),
+      onSwipeRight: !orphaned
+        ? async () => { await ensureListRef(item.productId); toast('Aggiunto alla spesa', 'success'); }
+        : undefined,
+      leftLabel: 'Elimina',
+      leftIcon: '🗑️',
+      rightLabel: 'Alla spesa',
+      rightIcon: '🛒',
+    });
+    swipeDetachers.push(sw.detach);
+    return sw.element;
   }
 
   function clearLongPress() {
     while (longPressDetachers.length) {
       const d = longPressDetachers.pop();
+      try { d(); } catch (_) { /* noop */ }
+    }
+    while (swipeDetachers.length) {
+      const d = swipeDetachers.pop();
       try { d(); } catch (_) { /* noop */ }
     }
   }
