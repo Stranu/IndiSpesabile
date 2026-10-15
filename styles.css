@@ -918,6 +918,56 @@ select {
   font-weight: 600;
 }
 
+/* ---------- Quick-pick bar (recurring shortcuts, shopping list) ---------- */
+.quickbar {
+  margin-bottom: var(--sp-3);
+}
+
+.quickbar[hidden] {
+  display: none;
+}
+
+.quickbar-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 var(--sp-2) 2px;
+}
+
+.quickbar-track {
+  display: flex;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  padding-bottom: var(--sp-1);
+  scrollbar-width: none;            /* Firefox */
+  -webkit-overflow-scrolling: touch;
+}
+
+.quickbar-track::-webkit-scrollbar {
+  display: none;                    /* WebKit */
+}
+
+.quick-chip {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-pill);
+  background: var(--brand-light);
+  color: var(--brand-dark);
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 80ms ease, background 120ms ease;
+}
+
+.quick-chip:active {
+  transform: scale(0.95);
+  background: var(--brand);
+  color: var(--on-brand);
+}
+
 /* ---------- Drag-to-reorder (shopping list) ---------- */
 .drag-handle {
   flex: 0 0 auto;

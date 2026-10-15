@@ -5,6 +5,19 @@
 import { suggestProducts, UNITS } from './store.js';
 import { parseDecimal, formatQty } from './units.js';
 
+// ----- haptic(pattern) — light vibration feedback (Android/Chrome) ------------
+// No-op where unsupported (notably iOS Safari). `pattern` is ms or an array of
+// on/off durations per the Vibration API. Guarded so it never throws.
+export function haptic(pattern = 15) {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(pattern);
+    }
+  } catch (_) {
+    /* ignore — vibration not available */
+  }
+}
+
 // ----- el(tag, props, children) — tiny hyperscript helper ---------------------
 export function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -460,6 +473,7 @@ export function attachReorder(listEl, { onReorder } = {}) {
     placeholder.style.height = rect.height + 'px';
     row.parentNode.insertBefore(placeholder, row.nextSibling);
 
+    haptic(20); // grip picked up
     row.classList.add('dragging');
     row.style.width = rect.width + 'px';
     row.style.position = 'fixed';
@@ -507,6 +521,7 @@ export function attachReorder(listEl, { onReorder } = {}) {
     dragEl = null;
     placeholder = null;
     rows = [];
+    haptic(10); // dropped
     if (typeof onReorder === 'function') onReorder(ids);
   }
 
@@ -641,9 +656,11 @@ export function swipeRow(rowEl, {
   function onTouchEnd() {
     if (!dragging) { reset(false); return; }
     if (dx <= -THRESHOLD && allowLeft) {
+      haptic(15);
       onSwipeLeft();
       reset(true);
     } else if (dx >= THRESHOLD && allowRight) {
+      haptic(15);
       onSwipeRight();
       reset(true);
     } else {
@@ -682,7 +699,10 @@ export function attachLongPress(node, onLongPress, ms = 500) {
     clearTimer();
     timer = setTimeout(() => {
       timer = null;
-      if (typeof onLongPress === 'function') onLongPress();
+      if (typeof onLongPress === 'function') {
+        haptic(20); // confirm entering selection mode
+        onLongPress();
+      }
     }, ms);
   }
   function clearTimer() {

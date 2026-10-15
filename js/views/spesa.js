@@ -27,7 +27,7 @@ import {
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, openModal, openRenameProduct, confirmSheet, qtyEditor, nameField, fab,
-  selectionController, attachLongPress, swipeRow, membershipBadges, dragHandle, attachReorder,
+  selectionController, attachLongPress, swipeRow, membershipBadges, dragHandle, attachReorder, haptic,
 } from '../ui.js';
 import {
   setListOrder,
@@ -78,6 +78,47 @@ export function render(container) {
     el('div', { class: 'selection-bar-right' }, [selAllBtn, selActionsBtn]),
   ]);
   container.appendChild(selectionBar);
+
+  // --- Quick-pick bar: horizontally scrollable chips of RECURRING products not
+  //     yet in the list. Tap a chip to add it instantly. Hidden when empty or
+  //     while selecting. Rebuilt on every render.
+  const quickBar = el('div', { class: 'quickbar', hidden: true });
+  container.appendChild(quickBar);
+
+  async function renderQuickPicks(voices) {
+    // Products already present (live) in the list — by productId.
+    const inList = new Set(voices.map((v) => v.productId));
+    const recurring = (await getAllProducts())
+      .filter((p) => p.recurring === true && !inList.has(p.id))
+      .sort((a, b) => a.name.localeCompare(b.name, 'it'));
+
+    quickBar.textContent = '';
+    if (selection.isActive() || recurring.length === 0) {
+      quickBar.hidden = true;
+      return;
+    }
+    quickBar.hidden = false;
+    quickBar.appendChild(el('div', { class: 'quickbar-label' }, 'Aggiungi al volo'));
+    const track = el('div', { class: 'quickbar-track' });
+    for (const p of recurring) {
+      track.appendChild(
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'quick-chip',
+            onClick: async () => {
+              haptic(12);
+              await ensureListRef(p.id);
+              toast(`Aggiunto: ${p.name}`, 'success', 1200);
+            },
+          },
+          `+ ${p.name}`
+        )
+      );
+    }
+    quickBar.appendChild(track);
+  }
 
   const listEl = el('div', { class: 'card list-card' });
   container.appendChild(listEl);
@@ -405,6 +446,9 @@ export function render(container) {
     clearLongPress();
     membership = await getProductMembership();
     const voices = await getAllList();
+
+    // Quick-pick chips (recurring not yet in list).
+    await renderQuickPicks(voices);
 
     // "Svuota comprati"/"Seleziona" bar: shown when there are items and NOT selecting.
     const hasBought = voices.some((v) => v.bought === true);
