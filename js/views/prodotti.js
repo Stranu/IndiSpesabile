@@ -258,13 +258,15 @@ export function render(container) {
     const selected = selection.has(product.id);
 
     const titleBits = [el('span', { class: 'row-title-text' }, product.name)];
+    // Recurring is shown as a plain 🔁 badge inline (the "Solo ricorrenti" filter
+    // up top explains the symbol), aligned with the presence badges below.
+    if (product.recurring) {
+      titleBits.push(el('span', { class: 'presence-badge', title: 'Ricorrente', 'aria-label': 'Ricorrente' }, '🔁'));
+    }
     // Presence badges: catalog shows all three (spesa 🛒, dispensa 🧺, desideri ⭐).
     for (const b of membershipBadges(product.id, membership, null)) titleBits.push(b);
     const title = el('div', { class: 'row-title has-badges' }, titleBits);
     const main = el('div', { class: 'row-main' }, [title]);
-    if (product.recurring) {
-      main.appendChild(el('div', { class: 'row-chips' }, [el('span', { class: 'tag recurring' }, '🔁 Ricorrente')]));
-    }
 
     const children = [];
     if (selMode) {
