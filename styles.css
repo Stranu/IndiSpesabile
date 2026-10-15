@@ -11,6 +11,7 @@
   --bg: #f6f7f6;
   --surface: #ffffff;
   --surface-2: #f0f2f0;
+  --row-alt: #fafbfa; /* barely-there zebra tint for list rows */
   --text: #1c231f;
   --text-muted: #5e6b63;
   --border: #d9e0db;
@@ -337,6 +338,30 @@ select {
 
 .row:last-child {
   border-bottom: none;
+}
+
+/* Subtle zebra striping to separate rows without adding weight or margins.
+   Rows may be wrapped in .swipe-wrap, so stripe the direct children of the
+   list card and paint both the bare .row and the swipe foreground. */
+.list-card > :nth-child(even),
+.list-card > :nth-child(even) .swipe-fg {
+  background: var(--row-alt);
+}
+
+/* Selection highlight and the dragged row must win over the zebra tint. */
+.list-card .row.row-selected,
+.list-card > :nth-child(even) .row.row-selected {
+  background: var(--brand-light);
+}
+
+.list-card .row.dragging,
+.list-card > :nth-child(even) .row.dragging {
+  background: var(--surface);
+}
+
+/* With the zebra tint doing the separation, the divider can be lighter. */
+.list-card .row {
+  border-bottom-color: color-mix(in srgb, var(--border) 55%, transparent);
 }
 
 .row-main {
@@ -1267,6 +1292,7 @@ select {
     --bg: #121613;
     --surface: #1b211d;
     --surface-2: #242b26;
+    --row-alt: #1f2621; /* barely-there zebra tint for list rows (dark) */
     --text: #e7ede9;
     --text-muted: #9fb0a7;
     --border: #313a34;
