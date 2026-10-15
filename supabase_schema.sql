@@ -18,10 +18,15 @@ create table if not exists public.spesa_list (
   qty_value   double precision,
   qty_unit    text,
   bought      boolean default false,
+  sort_order  double precision,          -- posizione manuale nella lista (ordinamento condiviso)
   created_at  timestamptz,
   updated_at  timestamptz not null default now(),
   deleted     boolean not null default false
 );
+
+-- Se la tabella spesa_list ESISTE GIA' (creata prima di questa colonna), lancia
+-- SOLO questa riga per aggiungere il campo ordinamento senza ricreare la tabella:
+--   alter table public.spesa_list add column if not exists sort_order double precision;
 
 -- VOCI DISPENSA (frigo/dispensa)
 create table if not exists public.spesa_pantry (

@@ -420,6 +420,109 @@ export function selectionController(onChange) {
   };
 }
 
+// ----- dragHandle() — the grip graphic (⠿) that starts a reorder drag ---------
+export function dragHandle() {
+  return el('span', { class: 'drag-handle', 'aria-label': 'Trascina per riordinare', role: 'button' }, '⠿');
+}
+
+// ----- attachReorder(listEl, { onReorder }) -----------------------------------
+// Enables touch drag-to-reorder for rows inside listEl. A drag only starts from
+// an element with class 'drag-handle' inside a row carrying data-reorder-id, so
+// it never conflicts with row swipe / long-press / vertical scroll elsewhere.
+// On drop, onReorder(orderedIds) is called with the new top-to-bottom order of
+// the data-reorder-id values. Returns detach().
+export function attachReorder(listEl, { onReorder } = {}) {
+  let dragEl = null;      // the row being dragged
+  let placeholder = null; // spacer showing the drop target
+  let startY = 0;
+  let offsetY = 0;        // pointer offset within the dragged row
+  let rows = [];          // snapshot of draggable rows at drag start
+
+  function rowFromHandle(target) {
+    const handle = target.closest && target.closest('.drag-handle');
+    if (!handle) return null;
+    return handle.closest('[data-reorder-id]');
+  }
+
+  function onTouchStart(e) {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const row = rowFromHandle(t.target);
+    if (!row) return;
+
+    dragEl = row;
+    rows = Array.from(listEl.querySelectorAll('[data-reorder-id]'));
+    const rect = row.getBoundingClientRect();
+    offsetY = t.clientY - rect.top;
+    startY = t.clientY;
+
+    placeholder = el('div', { class: 'reorder-placeholder' });
+    placeholder.style.height = rect.height + 'px';
+    row.parentNode.insertBefore(placeholder, row.nextSibling);
+
+    row.classList.add('dragging');
+    row.style.width = rect.width + 'px';
+    row.style.position = 'fixed';
+    row.style.left = rect.left + 'px';
+    row.style.top = rect.top + 'px';
+    row.style.zIndex = '80';
+    row.style.pointerEvents = 'none';
+  }
+
+  function onTouchMove(e) {
+    if (!dragEl) return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    dragEl.style.top = (t.clientY - offsetY) + 'px';
+
+    // Find the sibling the dragged row's midpoint is currently over.
+    const midY = t.clientY;
+    let ref = null;
+    for (const r of rows) {
+      if (r === dragEl) continue;
+      const rect = r.getBoundingClientRect();
+      if (midY < rect.top + rect.height / 2) { ref = r; break; }
+    }
+    if (ref) listEl.insertBefore(placeholder, ref);
+    else listEl.appendChild(placeholder);
+  }
+
+  function onTouchEnd() {
+    if (!dragEl) return;
+    // Drop the row where the placeholder is.
+    listEl.insertBefore(dragEl, placeholder);
+    placeholder.remove();
+    dragEl.classList.remove('dragging');
+    dragEl.style.cssText = dragEl.style.cssText
+      .replace(/width:[^;]+;?/, '')
+      .replace(/position:[^;]+;?/, '')
+      .replace(/left:[^;]+;?/, '')
+      .replace(/top:[^;]+;?/, '')
+      .replace(/z-index:[^;]+;?/, '')
+      .replace(/pointer-events:[^;]+;?/, '');
+    dragEl.removeAttribute('style');
+
+    const ids = Array.from(listEl.querySelectorAll('[data-reorder-id]'))
+      .map((r) => r.getAttribute('data-reorder-id'));
+    dragEl = null;
+    placeholder = null;
+    rows = [];
+    if (typeof onReorder === 'function') onReorder(ids);
+  }
+
+  listEl.addEventListener('touchstart', onTouchStart, { passive: true });
+  listEl.addEventListener('touchmove', onTouchMove, { passive: true });
+  listEl.addEventListener('touchend', onTouchEnd);
+  listEl.addEventListener('touchcancel', onTouchEnd);
+
+  return function detach() {
+    listEl.removeEventListener('touchstart', onTouchStart);
+    listEl.removeEventListener('touchmove', onTouchMove);
+    listEl.removeEventListener('touchend', onTouchEnd);
+    listEl.removeEventListener('touchcancel', onTouchEnd);
+  };
+}
+
 // ----- swipeRow(rowEl, {onSwipeLeft, onSwipeRight, leftLabel, leftIcon, rightLabel, rightIcon}) --
 // Wraps a row element to support horizontal swipe gestures with a revealed
 // background action. Returns { element, detach } where `element` is the wrapper
@@ -493,9 +596,13 @@ export function swipeRow(rowEl, {
     decided = false;
   }
 
+  let ignore = false; // true when the gesture started on a drag handle (reorder)
+
   function onTouchStart(e) {
     const t = e.touches && e.touches[0];
     if (!t) return;
+    // Don't treat a drag that starts on the reorder handle as a swipe.
+    ignore = !!(t.target.closest && t.target.closest('.drag-handle'));
     startX = t.clientX;
     startY = t.clientY;
     dx = 0;
@@ -504,6 +611,7 @@ export function swipeRow(rowEl, {
   }
 
   function onTouchMove(e) {
+    if (ignore) return;
     const t = e.touches && e.touches[0];
     if (!t) return;
     const mx = t.clientX - startX;
@@ -583,6 +691,8 @@ export function attachLongPress(node, onLongPress, ms = 500) {
   function onTouchStart(e) {
     const t = e.touches && e.touches[0];
     if (!t) return;
+    // Ignore presses that begin on a reorder drag handle.
+    if (t.target.closest && t.target.closest('.drag-handle')) return;
     start(t.clientX, t.clientY);
   }
   function onTouchMove(e) {

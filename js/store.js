@@ -296,6 +296,17 @@ export async function deleteProductCascade(id) {
 
 // ----- List (§8) -------------------------------------------------------------
 
+// nextListSortOrder — a sortOrder that places a new item at the END of the list.
+async function nextListSortOrder() {
+  const live = await getAllList();
+  let max = 0;
+  for (const v of live) {
+    const s = typeof v.sortOrder === 'number' ? v.sortOrder : 0;
+    if (s > max) max = s;
+  }
+  return max + 1000; // leave gaps so manual reordering rarely needs a full rewrite
+}
+
 // addListItem — low-level create primitive, NO dedup. Called only by ensureListRef.
 export async function addListItem({ productId, qtyValue = null, qtyUnit = null }) {
   const q = coerceQty(qtyValue, qtyUnit);
@@ -306,6 +317,7 @@ export async function addListItem({ productId, qtyValue = null, qtyUnit = null }
     qtyValue: q.qtyValue,
     qtyUnit: q.qtyUnit,
     bought: false,
+    sortOrder: await nextListSortOrder(),
     createdAt: now,
     updatedAt: now,
     deleted: false,
@@ -341,6 +353,26 @@ export async function markBought(id, bought = true) {
 
 export async function discardListItem(id) {
   await db.del('list', id);
+}
+
+// setListOrder(orderedIds) — persist a manual ordering of shopping-list items.
+// orderedIds is the desired top-to-bottom order of (typically not-bought) voices.
+// Writes an increasing sortOrder to each; only rows whose value actually changes
+// are written (fewer onChange/push). Returns the number of rows updated.
+export async function setListOrder(orderedIds) {
+  let changed = 0;
+  let order = 1000;
+  for (const id of orderedIds) {
+    const v = await db.get('list', id);
+    if (v && v.deleted === false && v.sortOrder !== order) {
+      v.sortOrder = order;
+      v.updatedAt = nowISO();
+      await db.put('list', v);
+      changed += 1;
+    }
+    order += 1000;
+  }
+  return changed;
 }
 
 // clearBoughtListItems — soft-delete every live BOUGHT shopping item in one pass.

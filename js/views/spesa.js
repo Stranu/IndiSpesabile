@@ -27,8 +27,11 @@ import {
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, openModal, openRenameProduct, confirmSheet, qtyEditor, nameField, fab,
-  selectionController, attachLongPress, swipeRow, membershipBadges,
+  selectionController, attachLongPress, swipeRow, membershipBadges, dragHandle, attachReorder,
 } from '../ui.js';
+import {
+  setListOrder,
+} from '../store.js';
 import { formatQty } from '../units.js';
 
 export function render(container) {
@@ -36,6 +39,7 @@ export function render(container) {
   let membership = null; // cross-section presence (loaded per render)
   const longPressDetachers = [];
   const swipeDetachers = [];
+  let reorderDetach = null;
 
   const selection = selectionController(() => {
     updateSelectionUI();
@@ -77,6 +81,14 @@ export function render(container) {
 
   const listEl = el('div', { class: 'card list-card' });
   container.appendChild(listEl);
+
+  // Manual drag-to-reorder (not-bought rows only; each is marked data-reorder-id).
+  // On drop, persist the new order via store.setListOrder.
+  reorderDetach = attachReorder(listEl, {
+    onReorder: async (ids) => {
+      if (ids.length) await setListOrder(ids);
+    },
+  });
 
   const addFab = fab({ label: 'Aggiungi alla spesa', onClick: openAddForm });
   container.appendChild(addFab);
@@ -323,6 +335,11 @@ export function render(container) {
     if (selMode) {
       children.push(el('span', { class: `sel-check${selected ? ' checked' : ''}`, 'aria-hidden': 'true' }, selected ? '✓' : ''));
     }
+    // Drag handle (reorder) — only for not-bought, non-orphan rows, outside select mode.
+    const canReorder = !selMode && !orphaned && !voice.bought;
+    if (canReorder) {
+      children.push(dragHandle());
+    }
     children.push(main);
     if (!selMode) {
       children.push(el('button', { type: 'button', class: 'kebab-btn', 'aria-label': 'Azioni', onClick: () => openRowMenu(voice, product) }, '⋮'));
@@ -347,6 +364,8 @@ export function render(container) {
       rightIcon: voice.bought ? '↩️' : '✅',
     });
     swipeDetachers.push(sw.detach);
+    // Mark the swipe wrapper as reorderable so attachReorder can move it as a unit.
+    if (canReorder) sw.element.setAttribute('data-reorder-id', voice.id);
     return sw.element;
   }
 
@@ -406,9 +425,14 @@ export function render(container) {
       return;
     }
 
-    // Not-bought first; bought struck-through and sorted to the BOTTOM (D3).
+    // Not-bought first (in manual sortOrder), bought struck-through at the BOTTOM (D3).
+    // Fallback to createdAt when sortOrder is missing (older rows / not yet synced).
+    const rank = (v) => (typeof v.sortOrder === 'number' ? v.sortOrder : Date.parse(v.createdAt) || 0);
     voices.sort((a, b) => {
       if (a.bought !== b.bought) return a.bought ? 1 : -1;
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
       return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
     });
     lastRendered = voices;
@@ -439,6 +463,7 @@ export function render(container) {
     destroy() {
       unsubscribe();
       clearLongPress();
+      if (reorderDetach) { try { reorderDetach(); } catch (_) { /* noop */ } }
     },
   };
 }
