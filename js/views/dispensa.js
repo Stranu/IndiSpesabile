@@ -434,12 +434,19 @@ export function render(container) {
     return { field, read: () => location };
   }
 
+  // Format an ISO date 'YYYY-MM-DD' as Italian 'DD/MM/YYYY'.
+  function formatDateIt(iso) {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return (y && m && d) ? `${d}/${m}/${y}` : iso;
+  }
+
   // --- Expiry chip ---
   function expiryChip(expiry) {
     if (expiry == null) return null;
     const d = daysUntil(expiry);
     let cls = 'neutral';
-    let label = `Scade ${expiry}`;
+    let label = `Scade ${formatDateIt(expiry)}`;
     if (d < 0) {
       cls = 'scaduto';
       label = 'Scaduto';
