@@ -600,6 +600,12 @@ select {
   margin: auto;
   width: calc(100% - 2 * var(--sp-4));
   max-width: 440px;
+  /* Never exceed the viewport; scroll the content when it's taller (e.g. an
+     edit form with many batches on a small phone). Keeps the last rows + the
+     Salva/Annulla buttons reachable. */
+  max-height: calc(100dvh - 2 * var(--sp-4) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-2);
@@ -1382,6 +1388,53 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+/* ---------- Batch editor rows (Dispensa "Modifica") ---------- */
+.batch-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* Quantity + date side by side, with the remove (✕) button at the far right. */
+.batch-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+
+.batch-row .field {
+  margin-bottom: 0;
+}
+
+/* Quantity takes the remaining space; date stays compact. */
+.batch-row .field:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.batch-row .field:nth-child(2) {
+  flex: 0 0 auto;
+}
+
+/* Narrower date input. */
+.batch-row input[type="date"] {
+  width: auto;
+  max-width: 9.5rem;
+}
+
+/* The ✕ sits to the RIGHT of the row, aligned with the inputs. */
+.batch-remove {
+  flex: 0 0 auto;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 /* ---------- Date input calendar icon ---------- */
