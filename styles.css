@@ -1397,36 +1397,44 @@ select {
   gap: var(--sp-3);
 }
 
-/* Quantity + date side by side, with the remove (✕) button at the far right. */
+/* Each batch stacks two rows: quantity (full width, so the +/- buttons show),
+   then expiry + the remove (✕) button. A divider separates batches. */
 .batch-row {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   gap: var(--sp-2);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.batch-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .batch-row .field {
   margin-bottom: 0;
 }
 
-/* Quantity takes the remaining space; date stays compact. */
-.batch-row .field:first-child {
-  flex: 1 1 auto;
-  min-width: 0;
+/* Row 2: narrow date on the left, ✕ at the far right. */
+.batch-expiry-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
 }
 
-.batch-row .field:nth-child(2) {
+.batch-expiry-field {
   flex: 0 0 auto;
 }
 
-/* Narrower date input. */
-.batch-row input[type="date"] {
+.batch-expiry-field input[type="date"] {
   width: auto;
-  max-width: 9.5rem;
+  max-width: 10rem;
 }
 
-/* The ✕ sits to the RIGHT of the row, aligned with the inputs. */
 .batch-remove {
   flex: 0 0 auto;
+  margin-left: auto; /* push ✕ to the right edge */
   min-width: var(--tap);
   min-height: var(--tap);
   padding: 0;

@@ -260,15 +260,19 @@ export function render(container) {
         },
         '✕'
       );
+      // Row 1: quantity on its own line (full width so the +/- buttons show).
       row.appendChild(el('div', { class: 'field' }, [
         el('span', { class: 'field-label' }, 'Quantità'),
         qty.element,
       ]));
-      row.appendChild(el('div', { class: 'field' }, [
-        el('span', { class: 'field-label' }, 'Scadenza'),
-        dateInput,
+      // Row 2: expiry (narrow) + the remove (✕) button to its right.
+      row.appendChild(el('div', { class: 'batch-expiry-row' }, [
+        el('div', { class: 'field batch-expiry-field' }, [
+          el('span', { class: 'field-label' }, 'Scadenza'),
+          dateInput,
+        ]),
+        removeBtn,
       ]));
-      row.appendChild(removeBtn);
       const entry = {
         element: row,
         read: () => {
