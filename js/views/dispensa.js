@@ -28,7 +28,7 @@ import {
   getProductMembership,
 } from '../store.js';
 import {
-  el, toast, haptic, openSheet, openModal, openRenameProduct, qtyEditor, nameField, fab,
+  el, toast, haptic, openSheet, openModal, qtyEditor, nameField, fab,
   selectionController, attachLongPress, swipeRow, membershipBadges,
 } from '../ui.js';
 import { formatQty, parseDecimal } from '../units.js';
@@ -292,11 +292,19 @@ export function render(container) {
       '+ Aggiungi lotto'
     );
 
+    // Editable product name (renames the product everywhere). Hidden for orphaned refs.
+    const nameInput = product
+      ? el('input', { type: 'text', class: 'input', value: product.name, autocomplete: 'off', 'aria-label': 'Nome prodotto' })
+      : null;
+    const nameField = product
+      ? el('div', { class: 'field' }, [el('span', { class: 'field-label' }, 'Nome'), nameInput])
+      : el('div', { class: 'field' }, [
+          el('span', { class: 'field-label' }, 'Prodotto'),
+          el('div', { class: 'row-title' }, '(prodotto eliminato)'),
+        ]);
+
     const content = el('div', {}, [
-      el('div', { class: 'field' }, [
-        el('span', { class: 'field-label' }, 'Prodotto'),
-        el('div', { class: 'row-title' }, product ? product.name : '(prodotto eliminato)'),
-      ]),
+      nameField,
       el('div', { class: 'field' }, [
         el('span', { class: 'field-label' }, 'Lotti'),
         batchesWrap,
@@ -313,6 +321,13 @@ export function render(container) {
           label: 'Salva',
           primary: true,
           onClick: async (c) => {
+            // Rename the product if the name changed (affects every section).
+            if (product && nameInput) {
+              const newName = nameInput.value.trim();
+              if (newName !== '' && newName !== product.name) {
+                await updateProduct(product.id, { name: newName });
+              }
+            }
             // Read ALL rows raw (empty row -> all-null batch). No pre-filter: the
             // store's normalizeBatches decides (absorb/drop/soft-delete).
             const raw = rows.map((r) => r.read());
@@ -323,6 +338,67 @@ export function render(container) {
         },
       ],
     });
+  }
+
+  // --- Details panel (read-only) with a pencil shortcut to edit ---
+  function openDetails(item, product) {
+    const name = product ? product.name : '(prodotto eliminato)';
+    const locationLabel = item.location === 'frigo' ? 'Frigo' : 'Dispensa';
+
+    // Per-unit totals summary.
+    const totals = voiceUnitTotals(item)
+      .map((t) => formatQty(t.qtyValue, t.qtyUnit))
+      .filter(Boolean);
+    const totalStr = totals.length ? totals.join(' · ') : 'Quantità non indicata';
+
+    // Batch breakdown (quantity + expiry), urgency-ordered.
+    const batches = sortBatchesByUrgency(normalizeBatches(ensureVoiceShape(item).batches));
+    const batchRows = batches.length
+      ? batches.map((b) => {
+          const qtyStr = formatQty(b.qtyValue, b.qtyUnit) || 'Quantità ignota';
+          const chip = expiryChip(b.expiry);
+          return el('div', { class: 'detail-batch' }, [
+            el('span', { class: 'detail-batch-qty' }, qtyStr),
+            chip || el('span', { class: 'detail-batch-noexp' }, 'Senza scadenza'),
+          ]);
+        })
+      : [el('div', { class: 'detail-batch-noexp' }, 'Nessun lotto')];
+
+    const content = el('div', { class: 'detail-view' }, [
+      el('div', { class: 'detail-row' }, [
+        el('span', { class: 'detail-label' }, 'Posizione'),
+        el('span', { class: 'detail-value' }, locationLabel),
+      ]),
+      el('div', { class: 'detail-row' }, [
+        el('span', { class: 'detail-label' }, 'Totale'),
+        el('span', { class: 'detail-value' }, totalStr),
+      ]),
+      el('div', { class: 'detail-section-label' }, 'Lotti'),
+      el('div', { class: 'detail-batches' }, batchRows),
+    ]);
+
+    const modal = openModal({ title: name, content });
+
+    // Pencil shortcut in the modal title area -> jump straight to edit.
+    const editBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'detail-edit-btn',
+        'aria-label': 'Modifica',
+        title: 'Modifica',
+        onClick: () => { modal.close(); openEditForm(item, product); },
+      },
+      '✏️'
+    );
+    // Place the pencil at the top-right of the modal title.
+    const titleEl = modal.element.querySelector('.modal-title');
+    if (titleEl) {
+      titleEl.classList.add('modal-title-with-action');
+      titleEl.appendChild(editBtn);
+    } else {
+      modal.element.insertBefore(editBtn, modal.element.firstChild);
+    }
   }
 
   // Sort a batch array by expiry urgency for display (most urgent first, no-date last).
@@ -375,8 +451,7 @@ export function render(container) {
     const orphaned = product === undefined;
     const items = [];
     if (!orphaned) {
-      items.push({ label: 'Modifica (lotti)', icon: '🔢', value: 'edit' });
-      items.push({ label: 'Modifica nome', icon: '✏️', value: 'rename' });
+      items.push({ label: 'Modifica', icon: '✏️', value: 'edit' });
       // "Sposta in …" shows the OTHER location (§8.1).
       if (item.location === 'frigo') {
         items.push({ label: 'Sposta in dispensa', icon: '🧺', value: 'move' });
@@ -392,8 +467,6 @@ export function render(container) {
     const choice = await openSheet({ title: product ? product.name : '(prodotto eliminato)', items });
     if (choice === 'edit') {
       openEditForm(item, product);
-    } else if (choice === 'rename') {
-      if (product) openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
     } else if (choice === 'move') {
       openMoveFlow(item);
     } else if (choice === 'toList') {
@@ -518,10 +591,6 @@ export function render(container) {
     const titleBits = [];
     if (sev) {
       titleBits.push(el('span', { class: 'sev-icon', title: sev.label, 'aria-label': sev.label }, sev.icon));
-    } else if (!orphaned) {
-      // No dated batch: a faint calendar marker so it stands out at a glance
-      // without competing with the colored severity icons.
-      titleBits.push(el('span', { class: 'no-expiry-icon', title: 'Senza scadenza', 'aria-label': 'Senza scadenza' }, '📅'));
     }
     titleBits.push(
       el('span', { class: 'row-title-text' }, orphaned ? '(prodotto eliminato)' : product.name)
@@ -558,6 +627,12 @@ export function render(container) {
     if (selMode) {
       children.push(el('span', { class: `sel-check${selected ? ' checked' : ''}`, 'aria-hidden': 'true' }, selected ? '✓' : ''));
     }
+    // Tap on the row content (not in selection mode) opens the read-only details.
+    if (!selMode && !orphaned) {
+      main.classList.add('row-main-tappable');
+      main.addEventListener('click', () => openDetails(item, product));
+    }
+
     children.push(main);
     if (!selMode) {
       children.push(el('button', { type: 'button', class: 'kebab-btn', 'aria-label': 'Azioni', onClick: () => openRowMenu(item, product) }, '⋮'));

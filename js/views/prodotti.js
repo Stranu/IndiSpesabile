@@ -23,7 +23,7 @@ import {
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, confirmSheet, openModal, openRenameProduct, fab,
-  selectionController, attachLongPress, swipeRow, membershipBadges,
+  selectionController, attachLongPress, swipeRow, membershipBadges, detailEditButton,
 } from '../ui.js';
 
 export function render(container) {
@@ -204,6 +204,34 @@ export function render(container) {
     nameInput.focus();
   }
 
+  // A catalog product's editable field here is the name, so "Modifica" = rename.
+  function openEditItem(product) {
+    openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
+  }
+
+  // --- Details panel (read-only) with a pencil shortcut to edit ---
+  function openDetails(product) {
+    // Cross-section presence across all three lists (Spesa 🛒 / Dispensa 🧺 / Desideri ⭐).
+    const badges = membershipBadges(product.id, membership, null);
+    const presenceValue = badges.length
+      ? el('span', { class: 'detail-value' }, badges)
+      : el('span', { class: 'detail-value' }, 'In nessuna lista');
+
+    const content = el('div', { class: 'detail-view' }, [
+      el('div', { class: 'detail-row' }, [
+        el('span', { class: 'detail-label' }, 'Ricorrente'),
+        el('span', { class: 'detail-value' }, product.recurring ? 'Sì' : 'No'),
+      ]),
+      el('div', { class: 'detail-row' }, [
+        el('span', { class: 'detail-label' }, 'Presenza'),
+        presenceValue,
+      ]),
+    ]);
+
+    const modal = openModal({ title: product.name, content });
+    detailEditButton(modal, () => openEditItem(product));
+  }
+
   async function openRowMenu(product) {
     const choice = await openSheet({
       title: product.name,
@@ -212,14 +240,14 @@ export function render(container) {
         { label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' },
         { label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' },
         { label: product.recurring ? 'Togli dai ricorrenti' : 'Aggiungi ai ricorrenti', icon: '🔁', value: 'recurring' },
-        { label: 'Modifica nome', icon: '✏️', value: 'rename' },
+        { label: 'Modifica', icon: '✏️', value: 'rename' },
         { label: 'Seleziona più elementi', icon: '☑️', value: 'select' },
         { label: 'Elimina', icon: '🗑️', value: 'delete', danger: true },
       ],
     });
 
     if (choice === 'rename') {
-      openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
+      openEditItem(product);
     } else if (choice === 'toList') {
       await ensureListRef(product.id);
       toast('Aggiunto alla spesa', 'success');
@@ -276,6 +304,11 @@ export function render(container) {
       children.push(
         el('span', { class: `sel-check${selected ? ' checked' : ''}`, 'aria-hidden': 'true' }, selected ? '✓' : '')
       );
+    }
+    // Tap on the row content (not in selection mode) opens details.
+    if (!selMode) {
+      main.classList.add('row-main-tappable');
+      main.addEventListener('click', () => openDetails(product));
     }
     children.push(main);
     if (!selMode) {

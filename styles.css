@@ -1357,20 +1357,10 @@ select {
    title a flex row only in that case so the plain-text titles elsewhere keep
    their own ellipsis behaviour. */
 .row-title:has(.sev-icon),
-.row-title:has(.no-expiry-icon),
 .row-title.has-badges {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-}
-
-/* "No expiry" marker: faint and small so it reads at a glance without shouting. */
-.no-expiry-icon {
-  flex: 0 0 auto;
-  font-size: 0.9rem;
-  line-height: 1;
-  color: var(--text-muted);
-  opacity: 0.4;
 }
 
 /* Cross-section presence badges (🛒 in spesa, 🧺 in dispensa, ⭐ nei desideri). */
@@ -1392,6 +1382,99 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+/* ---------- Date input calendar icon ---------- */
+/* Give the native calendar picker indicator a cursor and, in dark mode, make it
+   visible (by default it renders dark and disappears on a dark field). */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+/* ---------- Read-only details panel (Dispensa) ---------- */
+.detail-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
+}
+
+.detail-label {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.detail-value {
+  font-weight: 600;
+  text-align: right;
+}
+
+.detail-section-label {
+  margin-top: var(--sp-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.detail-batches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.detail-batch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.detail-batch-qty {
+  font-weight: 600;
+}
+
+.detail-batch-noexp {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Pencil shortcut docked in the modal title. */
+.modal-title-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.detail-edit-btn {
+  flex: 0 0 auto;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border: none;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.detail-edit-btn:active {
+  background: var(--brand-light);
+}
+
+/* The tappable content area of a pantry row (opens details). */
+.row-main-tappable {
+  cursor: pointer;
 }
 
 /* ---------- Dark theme ---------- */
@@ -1426,5 +1509,12 @@ select {
 
   .toast {
     background: #2a322d;
+  }
+
+  /* The native date picker icon renders dark by default and vanishes on a dark
+     field; invert it so it's clearly visible in dark mode. */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.9;
   }
 }

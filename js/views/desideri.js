@@ -22,7 +22,7 @@ import {
 } from '../store.js';
 import {
   el, toast, openSheet, openChoice, openModal, openRenameProduct, nameField, fab,
-  selectionController, attachLongPress, swipeRow, membershipBadges,
+  selectionController, attachLongPress, swipeRow, membershipBadges, detailEditButton,
 } from '../ui.js';
 
 export function render(container) {
@@ -133,10 +133,36 @@ export function render(container) {
     return modal;
   }
 
+  // A wishlist voice has no fields beyond the product, so "Modifica" = rename.
+  function openEditItem(item, product) {
+    if (product) openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
+  }
+
+  // --- Details panel (read-only) with a pencil shortcut to edit ---
+  function openDetails(item, product) {
+    const name = product ? product.name : '(prodotto eliminato)';
+
+    // Cross-section presence (Spesa 🛒 / Dispensa 🧺); the wishlist itself is excluded.
+    const badges = product ? membershipBadges(item.productId, membership, 'wishlist') : [];
+    const presenceValue = badges.length
+      ? el('span', { class: 'detail-value' }, badges)
+      : el('span', { class: 'detail-value' }, 'Solo nei desideri');
+
+    const content = el('div', { class: 'detail-view' }, [
+      el('div', { class: 'detail-row' }, [
+        el('span', { class: 'detail-label' }, 'Presenza'),
+        presenceValue,
+      ]),
+    ]);
+
+    const modal = openModal({ title: name, content });
+    detailEditButton(modal, () => openEditItem(item, product));
+  }
+
   async function openRowMenu(item, product) {
     const orphaned = product === undefined;
     const items = [
-      { label: 'Modifica nome', icon: '✏️', value: 'rename' },
+      { label: 'Modifica', icon: '✏️', value: 'rename' },
       { label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' },
       { label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' },
       { label: 'Seleziona più elementi', icon: '☑️', value: 'select' },
@@ -146,7 +172,7 @@ export function render(container) {
 
     const choice = await openSheet({ title: product ? product.name : '(prodotto eliminato)', items: menuItems });
     if (choice === 'rename') {
-      if (product) openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
+      openEditItem(item, product);
     } else if (choice === 'toList') {
       await ensureListRef(item.productId);
       toast('Aggiunto alla spesa', 'success');
@@ -187,6 +213,11 @@ export function render(container) {
     const children = [];
     if (selMode) {
       children.push(el('span', { class: `sel-check${selected ? ' checked' : ''}`, 'aria-hidden': 'true' }, selected ? '✓' : ''));
+    }
+    // Tap on the row content (not in selection mode, not orphaned) opens details.
+    if (!selMode && !orphaned) {
+      main.classList.add('row-main-tappable');
+      main.addEventListener('click', () => openDetails(item, product));
     }
     children.push(main);
     if (!selMode) {

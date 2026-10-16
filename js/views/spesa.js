@@ -27,8 +27,9 @@ import {
   getProductMembership,
 } from '../store.js';
 import {
-  el, toast, openSheet, openChoice, openModal, openRenameProduct, confirmSheet, qtyEditor, nameField, fab,
+  el, toast, openSheet, openChoice, openModal, confirmSheet, qtyEditor, nameField, fab,
   selectionController, attachLongPress, swipeRow, membershipBadges, dragHandle, attachReorder, haptic,
+  detailEditButton,
 } from '../ui.js';
 import {
   setListOrder,
@@ -390,21 +391,29 @@ export function render(container) {
     }
   }
 
-  // --- Edit quantity (from kebab) ---
-  function openEditQty(voice, product) {
+  // --- Unified edit (from kebab or details pencil): name + quantity ---
+  function openEditItem(voice, product) {
+    // Editable product name (renames the product everywhere). Hidden for orphaned refs.
+    const nameInput = product
+      ? el('input', { type: 'text', class: 'input', value: product.name, autocomplete: 'off', 'aria-label': 'Nome prodotto' })
+      : null;
+    const nameFieldEl = product
+      ? el('div', { class: 'field' }, [el('span', { class: 'field-label' }, 'Nome'), nameInput])
+      : el('div', { class: 'field' }, [
+          el('span', { class: 'field-label' }, 'Prodotto'),
+          el('div', { class: 'row-title' }, '(prodotto eliminato)'),
+        ]);
+
     const qty = qtyEditor({ value: voice.qtyValue, unit: voice.qtyUnit });
     const content = el('div', {}, [
-      el('div', { class: 'field' }, [
-        el('span', { class: 'field-label' }, 'Prodotto'),
-        el('div', { class: 'row-title' }, product ? product.name : '(prodotto eliminato)'),
-      ]),
+      nameFieldEl,
       el('div', { class: 'field' }, [
         el('span', { class: 'field-label' }, 'Quantità'),
         qty.element,
       ]),
     ]);
     openModal({
-      title: 'Modifica quantità',
+      title: 'Modifica',
       content,
       actions: [
         { label: 'Annulla', onClick: (c) => c() },
@@ -412,14 +421,52 @@ export function render(container) {
           label: 'Salva',
           primary: true,
           onClick: async (c) => {
+            // Rename the product if the name changed (affects every section).
+            if (product && nameInput) {
+              const newName = nameInput.value.trim();
+              if (newName !== '' && newName !== product.name) {
+                await updateProduct(product.id, { name: newName });
+              }
+            }
             const { qtyValue, qtyUnit } = qty.read();
             await updateListItem(voice.id, { qtyValue, qtyUnit });
             c();
-            toast('Quantità aggiornata', 'success');
+            toast('Elemento aggiornato', 'success');
           },
         },
       ],
     });
+  }
+
+  // --- Details panel (read-only) with a pencil shortcut to edit ---
+  function openDetails(voice, product) {
+    const name = product ? product.name : '(prodotto eliminato)';
+    const statoStr = voice.bought ? 'Comprato' : 'Da comprare';
+    const qtyStr = formatQty(voice.qtyValue, voice.qtyUnit) || 'Non indicata';
+
+    // Cross-section presence (Dispensa 🧺 / Desideri ⭐); the list itself is excluded.
+    const badges = product ? membershipBadges(voice.productId, membership, 'list') : [];
+    const presenceValue = badges.length
+      ? el('span', { class: 'detail-value' }, badges)
+      : el('span', { class: 'detail-value' }, 'Solo nella spesa');
+
+    const content = el('div', { class: 'detail-view' }, [
+      el('div', { class: 'detail-row' }, [
+        el('span', { class: 'detail-label' }, 'Stato'),
+        el('span', { class: 'detail-value' }, statoStr),
+      ]),
+      el('div', { class: 'detail-row' }, [
+        el('span', { class: 'detail-label' }, 'Quantità'),
+        el('span', { class: 'detail-value' }, qtyStr),
+      ]),
+      el('div', { class: 'detail-row' }, [
+        el('span', { class: 'detail-label' }, 'Presenza'),
+        presenceValue,
+      ]),
+    ]);
+
+    const modal = openModal({ title: name, content });
+    detailEditButton(modal, () => openEditItem(voice, product));
   }
 
   // --- Row kebab actions ---
@@ -432,8 +479,7 @@ export function render(container) {
       } else {
         items.push({ label: 'Segna come comprato', icon: '✅', value: 'bought' });
       }
-      items.push({ label: 'Modifica quantità', icon: '🔢', value: 'edit' });
-      items.push({ label: 'Modifica nome', icon: '✏️', value: 'rename' });
+      items.push({ label: 'Modifica', icon: '✏️', value: 'edit' });
       items.push({ label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' });
     }
     items.push({ label: 'Seleziona più elementi', icon: '☑️', value: 'select' });
@@ -445,9 +491,7 @@ export function render(container) {
     } else if (choice === 'unbought') {
       await markBought(voice.id, false);
     } else if (choice === 'edit') {
-      openEditQty(voice, product);
-    } else if (choice === 'rename') {
-      if (product) openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
+      openEditItem(voice, product);
     } else if (choice === 'select') {
       selection.enter(voice.id);
     } else if (choice === 'discard') {
@@ -495,6 +539,11 @@ export function render(container) {
     const canReorder = !selMode && !orphaned && !voice.bought;
     if (canReorder) {
       children.push(dragHandle());
+    }
+    // Tap on the row content (not in selection mode, not orphaned) opens details.
+    if (!selMode && !orphaned) {
+      main.classList.add('row-main-tappable');
+      main.addEventListener('click', () => openDetails(voice, product));
     }
     children.push(main);
     if (!selMode) {

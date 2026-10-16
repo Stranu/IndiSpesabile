@@ -823,6 +823,34 @@ export function openRenameProduct(currentName, onSave) {
   input.select();
 }
 
+// ----- detailEditButton(modal, onEdit) ----------------------------------------
+// Docks a ✏️ "Modifica" shortcut in a details modal's title, mirroring the inline
+// version in dispensa.js openDetails. Builds a .detail-edit-btn whose click closes
+// the modal then calls onEdit(); it is appended to the .modal-title (which gains the
+// .modal-title-with-action class), or inserted before the modal's first child when no
+// title node exists. `modal` is the { close, element } returned by openModal.
+export function detailEditButton(modal, onEdit) {
+  const editBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'detail-edit-btn',
+      'aria-label': 'Modifica',
+      title: 'Modifica',
+      onClick: () => { modal.close(); if (typeof onEdit === 'function') onEdit(); },
+    },
+    '✏️'
+  );
+  const titleEl = modal.element.querySelector('.modal-title');
+  if (titleEl) {
+    titleEl.classList.add('modal-title-with-action');
+    titleEl.appendChild(editBtn);
+  } else {
+    modal.element.insertBefore(editBtn, modal.element.firstChild);
+  }
+  return editBtn;
+}
+
 // ----- nameField({label, placeholder, onPick}) --------------------------------
 // A labelled name input with product autocomplete wired in. Returns
 // { element, inputEl, detach, value() }. onPick(product) fires when a suggestion
