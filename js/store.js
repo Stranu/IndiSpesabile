@@ -3,7 +3,7 @@
 // and D2 (deleteProductCascade inside a single db.runTx). Store never calls UI or sync.
 
 import * as db from './db.js';
-import { UNITS, combine, compatible, formatQty, dimensionOf, parseDecimal } from './units.js';
+import { UNITS, combine, dimensionOf, parseDecimal } from './units.js';
 
 // ----- Utilities (§5) --------------------------------------------------------
 
@@ -33,15 +33,6 @@ export function uid() {
 
 export function nowISO() {
   return new Date().toISOString();
-}
-
-// todayISO() — 'YYYY-MM-DD' local date.
-export function todayISO() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
 }
 
 export function normalizeName(s) {
@@ -370,21 +361,6 @@ export async function suggestProducts(query, limit = 8) {
 }
 
 // ----- Product CRUD (§5/§8) --------------------------------------------------
-
-export async function createProduct({ name, recurring = false }) {
-  const now = nowISO();
-  const product = {
-    id: uid(),
-    name: name.trim().replace(/\s+/g, ' '),
-    nameLower: normalizeName(name),
-    recurring,
-    createdAt: now,
-    updatedAt: now,
-    deleted: false,
-  };
-  await db.put('products', product);
-  return product;
-}
 
 export async function updateProduct(id, patch) {
   const p = await db.get('products', id);

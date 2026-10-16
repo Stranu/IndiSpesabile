@@ -33,5 +33,4 @@ export const resetPassword = (email) =>
     redirectTo: window.location.origin + window.location.pathname,
   });
 export const getSession = () => supabase.auth.getSession();
-export const getUser = () => supabase.auth.getUser();
 export const onAuthStateChange = (cb) => supabase.auth.onAuthStateChange(cb);

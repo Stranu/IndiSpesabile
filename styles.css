@@ -406,22 +406,6 @@ select {
   opacity: 0.75;
 }
 
-/* ---------- Tags ---------- */
-.tag {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  color: var(--text-muted);
-}
-
-.tag.recurring {
-  background: var(--brand-light);
-  color: var(--brand-dark);
-}
-
 /* ---------- Kebab (3 dots) ---------- */
 .kebab-btn {
   flex: 0 0 auto;
@@ -997,12 +981,6 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.putaway-qty {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  flex: 0 0 auto;
 }
 
 .putaway-controls {
