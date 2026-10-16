@@ -34,13 +34,18 @@ create table if not exists public.spesa_pantry (
   user_id     uuid not null references auth.users (id) on delete cascade,
   product_id  text,
   location    text,                 -- 'frigo' | 'dispensa'
-  qty_value   double precision,
-  qty_unit    text,
-  expiry      text,                 -- data ISO 'YYYY-MM-DD' o null
+  qty_value   double precision,     -- legacy: non più fonte di verità (vedi batches)
+  qty_unit    text,                 -- legacy
+  expiry      text,                 -- legacy: data ISO 'YYYY-MM-DD' o null
+  batches     jsonb,                -- lista di lotti [{qty_value, qty_unit, expiry}] (autoritativa)
   created_at  timestamptz,
   updated_at  timestamptz not null default now(),
   deleted     boolean not null default false
 );
+
+-- Se la tabella spesa_pantry ESISTE GIA' (creata prima dei lotti), lancia
+-- SOLO questa riga per aggiungere il campo lotti senza ricreare la tabella:
+--   alter table public.spesa_pantry add column if not exists batches jsonb;
 
 -- VOCI LISTA DESIDERI
 create table if not exists public.spesa_wishlist (

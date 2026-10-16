@@ -231,8 +231,10 @@ export function render(container) {
       if (!where) return;
       const location = where === 'Frigo' ? 'frigo' : 'dispensa';
       const result = await mergePantryQuantity(location, product.id, null, null);
-      if (result && result.merged === false && result.items.length === 2) {
-        toast('Unità diverse: tengo le voci separate', 'info');
+      if (result && result.keptSeparate) {
+        toast(result.separateReason === 'expiry'
+          ? 'Scadenza diversa: tengo i lotti separati'
+          : 'Unità diverse: tengo i lotti separati', 'info');
       } else {
         toast('Aggiunto in dispensa', 'success');
       }

@@ -22,6 +22,13 @@ export function parseDecimal(input) {
   return n;                             // 0 valid
 }
 
+// dimensionOf(unit) -> 'count' | 'mass' | 'vol' | null (unknown/null unit).
+// Public accessor to the (private) DIM map, used by store.js normalizeBatches/voiceUnitTotals
+// to group batches by unit dimension. DIM stays private.
+export function dimensionOf(unit) {
+  return DIM[unit] ?? null;
+}
+
 // compatible(a, b): same dimension and both known units.
 export function compatible(unitA, unitB) {
   return DIM[unitA] !== undefined && DIM[unitB] !== undefined && DIM[unitA] === DIM[unitB];

@@ -4,7 +4,19 @@
 
 import { supabase, getSession } from './supabase.js';
 import * as db from './db.js';
-import { getMeta, setMeta, nowISO } from './store.js';
+import { getMeta, setMeta, nowISO, normalizeBatches } from './store.js';
+
+// ----- pantry batch mapping helpers (design §6.2) ----------------------------
+// Local (non-exported). snake_case inside the jsonb, consistent with the schema.
+function normBatchFromRemote(b) {
+  return { qtyValue: b?.qty_value ?? null, qtyUnit: b?.qty_unit ?? null, expiry: b?.expiry ?? null };
+}
+// Reconstruct a single batch from a legacy flat remote row (older client / historic row).
+function reconstructLegacyBatches(r) {
+  return r.qty_value != null || r.expiry != null
+    ? [{ qtyValue: r.qty_value, qtyUnit: r.qty_unit, expiry: r.expiry }]
+    : [];
+}
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
 const DOMAIN_STORES = ['products', 'list', 'pantry', 'wishlist'];
@@ -70,24 +82,32 @@ const TABLES = [
       id: v.id,
       product_id: v.productId,
       location: v.location,
-      qty_value: v.qtyValue,
-      qty_unit: v.qtyUnit,
-      expiry: v.expiry,
+      // AUTHORITATIVE: batches in snake_case inside the jsonb (§6.2).
+      batches: Array.isArray(v.batches)
+        ? v.batches.map((b) => ({ qty_value: b.qtyValue, qty_unit: b.qtyUnit, expiry: b.expiry }))
+        : null,
+      // Legacy columns nulled: no longer the source of truth.
+      qty_value: null,
+      qty_unit: null,
+      expiry: null,
       created_at: v.createdAt,
       updated_at: v.updatedAt,
       deleted: v.deleted,
     }),
-    toLocal: (r) => ({
-      id: r.id,
-      productId: r.product_id,
-      location: r.location,
-      qtyValue: r.qty_value,
-      qtyUnit: r.qty_unit,
-      expiry: r.expiry,
-      createdAt: normIso(r.created_at ?? r.updated_at ?? nowISO()),
-      updatedAt: normIso(r.updated_at),
-      deleted: !!r.deleted,
-    }),
+    toLocal: (r) => {
+      const raw = Array.isArray(r.batches)
+        ? r.batches.map(normBatchFromRemote)   // new row: snake -> camel
+        : reconstructLegacyBatches(r);          // legacy row: rebuild a single batch
+      return {
+        id: r.id,
+        productId: r.product_id,
+        location: r.location,
+        batches: normalizeBatches(raw),         // normalize on BOTH branches (§6.2)
+        createdAt: normIso(r.created_at ?? r.updated_at ?? nowISO()),
+        updatedAt: normIso(r.updated_at),
+        deleted: !!r.deleted,
+      };
+    },
   },
   {
     store: 'wishlist',

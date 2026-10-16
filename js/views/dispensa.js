@@ -10,9 +10,9 @@ import {
   getProduct,
   getOrCreateProduct,
   daysUntil,
-  expiryLevel,
   mergePantryQuantity,
-  updatePantryItem,
+  setPantryBatches,
+  movePantryBatches,
   updateProduct,
   removePantryItem,
   removePantryItemsMany,
@@ -20,13 +20,18 @@ import {
   voicesToWishlist,
   ensureListRef,
   ensureWishlistRef,
+  ensureVoiceShape,
+  normalizeBatches,
+  voiceMostUrgentLevel,
+  voiceIsExpiring,
+  voiceUnitTotals,
   getProductMembership,
 } from '../store.js';
 import {
-  el, toast, openSheet, openModal, openRenameProduct, qtyEditor, nameField, fab,
+  el, toast, haptic, openSheet, openModal, openRenameProduct, qtyEditor, nameField, fab,
   selectionController, attachLongPress, swipeRow, membershipBadges,
 } from '../ui.js';
-import { formatQty } from '../units.js';
+import { formatQty, parseDecimal } from '../units.js';
 
 const TABS = [
   { label: 'Frigo', value: 'frigo' },
@@ -46,7 +51,7 @@ const EXPIRY_ICON = {
 const EXPIRY_RANK = { expired: 0, today: 1, soon: 2, warn: 3, ok: 4, null: 5 };
 
 export function render(container) {
-  let activeTab = 'frigo'; // default Frigo
+  let activeTab = 'tutti'; // default: show everything
   let onlyExpiring = false;
   let lastRendered = [];
   let membership = null; // cross-section presence (loaded per render)
@@ -202,15 +207,13 @@ export function render(container) {
             const loc = readLocation();
             const { qtyValue, qtyUnit } = qty.read();
             const expiry = dateInput.value || null;
-            const result = await mergePantryQuantity(loc, product.id, qtyValue, qtyUnit);
-            if (expiry != null && result && result.items.length) {
-              const entry = result.items[result.items.length - 1];
-              await updatePantryItem(entry.id, { expiry });
-            }
+            const result = await mergePantryQuantity(loc, product.id, qtyValue, qtyUnit, expiry);
             name.detach();
             c();
-            if (result && result.merged === false && result.items.length === 2) {
-              toast('Unità diverse: tengo le voci separate', 'info');
+            if (result && result.keptSeparate) {
+              toast(result.separateReason === 'expiry'
+                ? 'Scadenza diversa: tengo i lotti separati'
+                : 'Unità diverse: tengo i lotti separati', 'info');
             } else {
               toast('Aggiunto in dispensa', 'success');
             }
@@ -222,10 +225,72 @@ export function render(container) {
     return modal;
   }
 
-  // Edit an existing pantry item's quantity + expiry (location stays fixed).
+  // Edit an existing pantry voice as a LIST OF BATCHES (design §4.2).
+  // Each row: qtyEditor + date ("Scadenza") + remove button. "Aggiungi lotto" appends
+  // an empty row. On save, EVERY row is passed RAW to setPantryBatches (no pre-filter):
+  // normalizeBatches is the sole arbiter (absorbs redundant nulls, drops zero-qty,
+  // soft-deletes the voice if nothing remains -> toast 'Elemento rimosso').
   function openEditForm(item, product) {
-    const qty = qtyEditor({ value: item.qtyValue, unit: item.qtyUnit });
-    const dateInput = el('input', { type: 'date', class: 'input', value: item.expiry || '', 'aria-label': 'Scadenza' });
+    // Rows shown in urgency order (same as the list row), but save order is irrelevant.
+    const initial = sortBatchesByUrgency(normalizeBatches(ensureVoiceShape(item).batches));
+    const rows = []; // { element, read():{qtyValue,qtyUnit,expiry} }
+
+    const batchesWrap = el('div', { class: 'batch-editor' });
+
+    function addBatchRow(batch) {
+      const qty = qtyEditor({ value: batch ? batch.qtyValue : null, unit: batch ? batch.qtyUnit : null });
+      const dateInput = el('input', {
+        type: 'date',
+        class: 'input',
+        value: batch && batch.expiry ? batch.expiry : '',
+        'aria-label': 'Scadenza',
+      });
+      const row = el('div', { class: 'batch-row' });
+      const removeBtn = el(
+        'button',
+        {
+          type: 'button',
+          class: 'btn-ghost batch-remove',
+          'aria-label': 'Rimuovi lotto',
+          onClick: () => {
+            const idx = rows.indexOf(entry);
+            if (idx >= 0) rows.splice(idx, 1);
+            row.remove();
+          },
+        },
+        '✕'
+      );
+      row.appendChild(el('div', { class: 'field' }, [
+        el('span', { class: 'field-label' }, 'Quantità'),
+        qty.element,
+      ]));
+      row.appendChild(el('div', { class: 'field' }, [
+        el('span', { class: 'field-label' }, 'Scadenza'),
+        dateInput,
+      ]));
+      row.appendChild(removeBtn);
+      const entry = {
+        element: row,
+        read: () => {
+          const { qtyValue, qtyUnit } = qty.read();
+          return { qtyValue, qtyUnit, expiry: dateInput.value || null };
+        },
+      };
+      rows.push(entry);
+      batchesWrap.appendChild(row);
+    }
+
+    if (initial.length === 0) {
+      addBatchRow(null); // voice with no batch: show one empty row to re-add a quantity
+    } else {
+      for (const b of initial) addBatchRow(b);
+    }
+
+    const addBatchBtn = el(
+      'button',
+      { type: 'button', class: 'btn-ghost', onClick: () => addBatchRow(null) },
+      '+ Aggiungi lotto'
+    );
 
     const content = el('div', {}, [
       el('div', { class: 'field' }, [
@@ -233,13 +298,10 @@ export function render(container) {
         el('div', { class: 'row-title' }, product ? product.name : '(prodotto eliminato)'),
       ]),
       el('div', { class: 'field' }, [
-        el('span', { class: 'field-label' }, 'Quantità'),
-        qty.element,
+        el('span', { class: 'field-label' }, 'Lotti'),
+        batchesWrap,
       ]),
-      el('div', { class: 'field' }, [
-        el('span', { class: 'field-label' }, 'Scadenza'),
-        dateInput,
-      ]),
+      addBatchBtn,
     ]);
 
     openModal({
@@ -251,13 +313,25 @@ export function render(container) {
           label: 'Salva',
           primary: true,
           onClick: async (c) => {
-            const { qtyValue, qtyUnit } = qty.read();
-            await updatePantryItem(item.id, { qtyValue, qtyUnit, expiry: dateInput.value || null });
+            // Read ALL rows raw (empty row -> all-null batch). No pre-filter: the
+            // store's normalizeBatches decides (absorb/drop/soft-delete).
+            const raw = rows.map((r) => r.read());
+            const result = await setPantryBatches(item.id, raw);
             c();
-            toast('Elemento aggiornato', 'success');
+            toast(result && result.removed ? 'Elemento rimosso' : 'Elemento aggiornato', 'success');
           },
         },
       ],
+    });
+  }
+
+  // Sort a batch array by expiry urgency for display (most urgent first, no-date last).
+  // Pure render ordering; does not touch the persisted canonical order.
+  function sortBatchesByUrgency(batches) {
+    return [...batches].sort((a, b) => {
+      const da = a.expiry != null ? daysUntil(a.expiry) : Infinity;
+      const dbk = b.expiry != null ? daysUntil(b.expiry) : Infinity;
+      return da - dbk;
     });
   }
 
@@ -301,8 +375,14 @@ export function render(container) {
     const orphaned = product === undefined;
     const items = [];
     if (!orphaned) {
-      items.push({ label: 'Modifica (quantità / scadenza)', icon: '🔢', value: 'edit' });
+      items.push({ label: 'Modifica (lotti)', icon: '🔢', value: 'edit' });
       items.push({ label: 'Modifica nome', icon: '✏️', value: 'rename' });
+      // "Sposta in …" shows the OTHER location (§8.1).
+      if (item.location === 'frigo') {
+        items.push({ label: 'Sposta in dispensa', icon: '🧺', value: 'move' });
+      } else {
+        items.push({ label: 'Sposta in frigo', icon: '❄️', value: 'move' });
+      }
       items.push({ label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' });
       items.push({ label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' });
     }
@@ -314,6 +394,8 @@ export function render(container) {
       openEditForm(item, product);
     } else if (choice === 'rename') {
       if (product) openRenameProduct(product.name, (newName) => updateProduct(product.id, { name: newName }));
+    } else if (choice === 'move') {
+      openMoveFlow(item);
     } else if (choice === 'toList') {
       await ensureListRef(item.productId);
       toast('Aggiunto alla spesa', 'success');
@@ -327,16 +409,119 @@ export function render(container) {
     }
   }
 
+  // --- Move between frigo/dispensa (design §8.2) ---
+  async function openMoveFlow(item) {
+    const toLocation = item.location === 'frigo' ? 'dispensa' : 'frigo';
+    const movedToast = toLocation === 'frigo' ? 'Spostato in frigo' : 'Spostato in dispensa';
+    const snap = sortBatchesByUrgency(normalizeBatches(ensureVoiceShape(item).batches));
+
+    // Single batch (or empty) -> wholesale move, no modal.
+    if (snap.length <= 1) {
+      await movePantryBatches(item.id, toLocation, 'all');
+      haptic();
+      toast(movedToast, 'success');
+      return;
+    }
+
+    // Multi-batch -> selection modal. Indices refer to this snapshot.
+    const rowStates = []; // { index, checkbox, qtyInput }
+    const listWrap = el('div', { class: 'move-list' });
+
+    // "Sposta tutto" toggle at the top.
+    const allCheckbox = el('input', { type: 'checkbox', 'aria-label': 'Sposta tutto' });
+    const allRow = el('label', { class: 'move-row move-row-all' }, [
+      allCheckbox,
+      el('span', {}, 'Sposta tutto'),
+    ]);
+    allCheckbox.addEventListener('change', () => {
+      const on = allCheckbox.checked;
+      for (const st of rowStates) {
+        st.checkbox.checked = on;
+        if (st.qtyInput) st.qtyInput.disabled = on; // moving whole batches
+      }
+    });
+    listWrap.appendChild(allRow);
+
+    snap.forEach((b, index) => {
+      const checkbox = el('input', { type: 'checkbox', 'aria-label': 'Seleziona lotto' });
+      const qtyStr = formatQty(b.qtyValue, b.qtyUnit) || 'Quantità ignota';
+      const dateStr = b.expiry ? `Scade ${b.expiry}` : 'Senza scadenza';
+      let qtyInput = null;
+      if (b.qtyValue != null) {
+        qtyInput = el('input', {
+          type: 'number',
+          inputmode: 'decimal',
+          min: '0',
+          class: 'input move-qty',
+          placeholder: 'Tutto',
+          'aria-label': 'Quantità da spostare',
+        });
+      }
+      const label = el('label', { class: 'move-row' }, [
+        checkbox,
+        el('span', { class: 'move-batch-info' }, `${qtyStr} · ${dateStr}`),
+      ]);
+      const row = el('div', { class: 'move-row-wrap' }, qtyInput ? [label, qtyInput] : [label]);
+      listWrap.appendChild(row);
+      rowStates.push({ index, checkbox, qtyInput });
+    });
+
+    const content = el('div', {}, [listWrap]);
+
+    openModal({
+      title: movedToast.replace('Spostato', 'Sposta'),
+      content,
+      actions: [
+        { label: 'Annulla', onClick: (c) => c() },
+        {
+          label: 'Sposta',
+          primary: true,
+          // Button ALWAYS enabled; validate on click (OPTION A, §8.2).
+          onClick: async (close) => {
+            if (allCheckbox.checked) {
+              await movePantryBatches(item.id, toLocation, 'all');
+              haptic();
+              toast(movedToast, 'success');
+              close();
+              return;
+            }
+            const selectionArr = [];
+            for (const st of rowStates) {
+              if (!st.checkbox.checked) continue;
+              const sel = { index: st.index };
+              if (st.qtyInput && st.qtyInput.value.trim() !== '') {
+                sel.qty = st.qtyInput.value;
+              }
+              selectionArr.push(sel);
+            }
+            if (selectionArr.length === 0) {
+              toast('Seleziona almeno un lotto', 'info');
+              return; // do NOT close
+            }
+            await movePantryBatches(item.id, toLocation, selectionArr);
+            haptic();
+            toast(movedToast, 'success');
+            close();
+          },
+        },
+      ],
+    });
+  }
+
   // --- Build a row (clean: name + qty/location sub + expiry chip) ---
   function buildRow(item, product) {
     const orphaned = product === undefined;
 
-    const level = expiryLevel(item.expiry);
+    const level = voiceMostUrgentLevel(item);
     const sev = level && EXPIRY_ICON[level];
 
     const titleBits = [];
     if (sev) {
       titleBits.push(el('span', { class: 'sev-icon', title: sev.label, 'aria-label': sev.label }, sev.icon));
+    } else if (!orphaned) {
+      // No dated batch: a faint calendar marker so it stands out at a glance
+      // without competing with the colored severity icons.
+      titleBits.push(el('span', { class: 'no-expiry-icon', title: 'Senza scadenza', 'aria-label': 'Senza scadenza' }, '📅'));
     }
     titleBits.push(
       el('span', { class: 'row-title-text' }, orphaned ? '(prodotto eliminato)' : product.name)
@@ -349,13 +534,22 @@ export function render(container) {
     const main = el('div', { class: 'row-main' }, [title]);
 
     const subBits = [];
-    const qtyStr = formatQty(item.qtyValue, item.qtyUnit);
-    if (qtyStr) subBits.push(qtyStr);
+    // Per-unit totals summed across batches (e.g. '3 pz · 0,5 kg').
+    const totals = voiceUnitTotals(item)
+      .map((t) => formatQty(t.qtyValue, t.qtyUnit))
+      .filter(Boolean);
+    for (const t of totals) subBits.push(t);
     if (activeTab === 'tutti') subBits.push(item.location === 'frigo' ? 'Frigo' : 'Dispensa');
     if (subBits.length) main.appendChild(el('div', { class: 'row-sub' }, subBits.join(' · ')));
 
-    const chip = expiryChip(item.expiry);
-    if (chip) main.appendChild(el('div', { class: 'row-chips' }, [chip]));
+    // One chip per DATED batch, ordered by urgency at render.
+    const datedBatches = (Array.isArray(item.batches) ? item.batches : [])
+      .filter((b) => b.expiry != null)
+      .sort((a, b) => daysUntil(a.expiry) - daysUntil(b.expiry));
+    if (datedBatches.length) {
+      const chips = datedBatches.map((b) => expiryChip(b.expiry)).filter(Boolean);
+      if (chips.length) main.appendChild(el('div', { class: 'row-chips' }, chips));
+    }
 
     const selMode = selection.isActive();
     const selected = selection.has(item.id);
@@ -428,10 +622,7 @@ export function render(container) {
     let items = await getAllPantry();
     if (activeTab !== 'tutti') items = items.filter((i) => i.location === activeTab);
     if (onlyExpiring) {
-      items = items.filter((i) => {
-        const lvl = expiryLevel(i.expiry);
-        return lvl === 'warn' || lvl === 'soon' || lvl === 'today' || lvl === 'expired';
-      });
+      items = items.filter(voiceIsExpiring);
     }
 
     listEl.textContent = '';
@@ -451,8 +642,8 @@ export function render(container) {
     // Sort by expiry urgency first (most urgent on top), then by creation time.
     // Items with no expiry sink to the bottom.
     items.sort((a, b) => {
-      const ra = EXPIRY_RANK[expiryLevel(a.expiry) ?? 'null'];
-      const rb = EXPIRY_RANK[expiryLevel(b.expiry) ?? 'null'];
+      const ra = EXPIRY_RANK[voiceMostUrgentLevel(a) ?? 'null'];
+      const rb = EXPIRY_RANK[voiceMostUrgentLevel(b) ?? 'null'];
       if (ra !== rb) return ra - rb;
       return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
     });

@@ -3,7 +3,7 @@
 // and D2 (deleteProductCascade inside a single db.runTx). Store never calls UI or sync.
 
 import * as db from './db.js';
-import { UNITS, combine } from './units.js';
+import { UNITS, combine, compatible, formatQty, dimensionOf, parseDecimal } from './units.js';
 
 // ----- Utilities (§5) --------------------------------------------------------
 
@@ -79,14 +79,11 @@ export function expiryLevel(expiryYMD) {
 // states (warn/soon/today/expired) — used for the nav badge and summaries.
 const EXPIRING_LEVELS = new Set(['warn', 'soon', 'today', 'expired']);
 
-// countExpiring() — how many live pantry items need attention (expiring/expired).
+// countExpiring() — how many live pantry VOICES need attention (expiring/expired).
+// A voice counts if ANY of its batches is expiring (voiceIsExpiring, reusing EXPIRING_LEVELS).
 export async function countExpiring() {
   const items = await getAllPantry();
-  let n = 0;
-  for (const it of items) {
-    if (EXPIRING_LEVELS.has(expiryLevel(it.expiry))) n += 1;
-  }
-  return n;
+  return items.filter(voiceIsExpiring).length;
 }
 
 // countListToBuy() — how many live shopping items are not yet bought.
@@ -114,6 +111,162 @@ function coerceQty(qtyValue, qtyUnit) {
   return { qtyValue, qtyUnit };
 }
 
+// ----- Pantry BATCH model — pure helpers (design §1.3/§3/§5.0/§5.1) ----------
+// A pantry voice carries a `batches` array of { qtyValue, qtyUnit, expiry }.
+// All of the following are PURE (no IDB/DOM): normalizeBatches/voiceUnitTotals are
+// also time-independent (no daysUntil); voiceMostUrgentLevel/voiceIsExpiring derive
+// from the clock and are RENDER derivations (not persisted).
+
+// sameExpiry(a, b) — two batches share the same expiry (both null == same).
+function sameExpiry(a, b) {
+  return (a.expiry ?? null) === (b.expiry ?? null);
+}
+
+// round3(x) — round to 3 decimals, consistent with units.combine.
+function round3(x) {
+  return Math.round(x * 1000) / 1000;
+}
+
+// normalizeBatches(rawBatches) -> Batch[]
+//   Deterministic, idempotent, TIME-INDEPENDENT arbiter of the §1.3 invariant.
+//   0) tolerant to non-array input (undefined/null/object -> []);
+//   1) coerceQty per batch; drop qtyValue === 0;
+//   2) group by (expiryKey, dimKey) and sum compatibles via combine (<=1 per pair);
+//   3) per expiry, absorb qtyValue == null batches when a quantified one exists;
+//   4) canonical stable order: expiry asc (null last), then dimKey, then qtyUnit.
+export function normalizeBatches(rawBatches) {
+  const src = Array.isArray(rawBatches) ? rawBatches : [];
+
+  // Step 1: coerce + drop zero-quantity batches.
+  const coerced = [];
+  for (const b of src) {
+    if (!b) continue;
+    const q = coerceQty(b.qtyValue, b.qtyUnit);
+    if (q.qtyValue === 0) continue; // zero = nothing
+    coerced.push({ qtyValue: q.qtyValue, qtyUnit: q.qtyUnit, expiry: b.expiry ?? null });
+  }
+
+  // Step 2: group by (expiryKey, dimKey) and sum compatibles.
+  const groups = new Map(); // key -> accumulated batch
+  for (const b of coerced) {
+    const expiryKey = b.expiry ?? '\u2205'; // null/empty -> "no expiry"
+    const dimKey = dimensionOf(b.qtyUnit) ?? ('?' + String(b.qtyUnit));
+    const key = expiryKey + '|' + dimKey;
+    const cur = groups.get(key);
+    if (!cur) {
+      groups.set(key, { ...b });
+      continue;
+    }
+    // One of them may be a null-quantity placeholder; prefer the quantified one.
+    if (cur.qtyValue == null) {
+      groups.set(key, { ...b });
+    } else if (b.qtyValue == null) {
+      // keep cur (quantified), absorb the null
+    } else {
+      const sum = combine(
+        { qtyValue: cur.qtyValue, qtyUnit: cur.qtyUnit },
+        { qtyValue: b.qtyValue, qtyUnit: b.qtyUnit }
+      );
+      if (sum.ok) {
+        groups.set(key, { qtyValue: sum.qtyValue, qtyUnit: sum.qtyUnit, expiry: cur.expiry });
+      } else {
+        // Shouldn't happen within a single dimKey, but keep cur defensively.
+      }
+    }
+  }
+
+  let out = Array.from(groups.values());
+
+  // Step 3: per expiry, drop null-quantity batches if a quantified one exists.
+  const hasQtyForExpiry = new Set();
+  for (const b of out) {
+    if (b.qtyValue != null) hasQtyForExpiry.add(b.expiry ?? '\u2205');
+  }
+  out = out.filter((b) => {
+    if (b.qtyValue != null) return true;
+    return !hasQtyForExpiry.has(b.expiry ?? '\u2205'); // absorb redundant null
+  });
+
+  // Step 4: canonical stable order (expiry asc, null last; then dim; then unit).
+  out.sort((a, b) => {
+    const ea = a.expiry ?? null;
+    const eb = b.expiry ?? null;
+    if (ea !== eb) {
+      if (ea == null) return 1; // null expiry sinks to the bottom
+      if (eb == null) return -1;
+      return ea < eb ? -1 : 1;
+    }
+    const da = dimensionOf(a.qtyUnit) ?? ('?' + String(a.qtyUnit));
+    const dbk = dimensionOf(b.qtyUnit) ?? ('?' + String(b.qtyUnit));
+    if (da !== dbk) return da < dbk ? -1 : 1;
+    const ua = String(a.qtyUnit);
+    const ub = String(b.qtyUnit);
+    if (ua !== ub) return ua < ub ? -1 : 1;
+    return 0;
+  });
+
+  return out;
+}
+
+// voiceMostUrgentLevel(voice) -> level | null — most urgent dated batch (min daysUntil).
+// RENDER derivation (clock-dependent); null if no dated batch.
+export function voiceMostUrgentLevel(voice) {
+  const batches = Array.isArray(voice.batches) ? voice.batches : [];
+  let best = null; // { level, days }
+  for (const b of batches) {
+    const level = expiryLevel(b.expiry);
+    if (level == null) continue;
+    const days = daysUntil(b.expiry);
+    if (best == null || days < best.days) best = { level, days };
+  }
+  return best ? best.level : null;
+}
+
+// voiceIsExpiring(voice) -> boolean — at least one batch is warn/soon/today/expired.
+// Reuses the EXPIRING_LEVELS set (no new threshold).
+export function voiceIsExpiring(voice) {
+  const batches = Array.isArray(voice.batches) ? voice.batches : [];
+  return batches.some((b) => EXPIRING_LEVELS.has(expiryLevel(b.expiry)));
+}
+
+// voiceUnitTotals(voice) -> Array<{qtyValue, qtyUnit}> — per-dimension totals summed
+// via units.combine (for the compact row summary). null-quantity batches don't contribute.
+export function voiceUnitTotals(voice) {
+  const batches = Array.isArray(voice.batches) ? voice.batches : [];
+  const byDim = new Map(); // dimKey -> { qtyValue, qtyUnit }
+  for (const b of batches) {
+    if (b.qtyValue == null) continue;
+    const dim = dimensionOf(b.qtyUnit);
+    const dimKey = dim ?? ('?' + String(b.qtyUnit));
+    const cur = byDim.get(dimKey);
+    if (!cur) {
+      byDim.set(dimKey, { qtyValue: b.qtyValue, qtyUnit: b.qtyUnit });
+      continue;
+    }
+    const sum = combine(
+      { qtyValue: cur.qtyValue, qtyUnit: cur.qtyUnit },
+      { qtyValue: b.qtyValue, qtyUnit: b.qtyUnit }
+    );
+    if (sum.ok) {
+      byDim.set(dimKey, { qtyValue: sum.qtyValue, qtyUnit: sum.qtyUnit });
+    }
+  }
+  return Array.from(byDim.values());
+}
+
+// ensureVoiceShape(voice) — lazy on-read migration (design §10). Idempotent + lossless.
+//   New-shape voice (batches is array) -> returned unchanged.
+//   Old flat shape -> { ...voice, batches: normalizeBatches([{qtyValue,qtyUnit,expiry}]) }.
+//   Legacy flat fields are left on the object in RAM (nulled on remote write, §6).
+export function ensureVoiceShape(voice) {
+  if (Array.isArray(voice.batches)) return voice;
+  const b =
+    voice.qtyValue != null || voice.expiry != null
+      ? [{ qtyValue: voice.qtyValue, qtyUnit: voice.qtyUnit, expiry: voice.expiry }]
+      : [];
+  return { ...voice, batches: normalizeBatches(b) };
+}
+
 // ----- Tombstone-filtering read helpers (§5) ---------------------------------
 
 export async function getAllProducts() {
@@ -130,7 +283,8 @@ export async function getAllList() {
 }
 
 export async function getAllPantry() {
-  return (await db.getAll('pantry')).filter((v) => v.deleted === false);
+  // Lazy on-read migration to the batch shape (§10): never rewrites, no updatedAt bump.
+  return (await db.getAll('pantry')).filter((v) => v.deleted === false).map(ensureVoiceShape);
 }
 
 export async function getAllWishlist() {
@@ -395,18 +549,42 @@ export async function listItemToPantry(id, location) {
   return result;
 }
 
+// boughtListItemsToPantry(moves) — bulk "put bought items away".
+// `moves` is an array of { id, location ('frigo'|'dispensa'), expiry (YYYY-MM-DD|null),
+//   qtyValue?, qtyUnit? }. The quantity, if provided (edited in the modal), overrides
+// the list voice's quantity; otherwise the list voice's quantity is used.
+// For each, read the list voice, add a batch to the destination pantry voice
+// (merging per the batch rules), then remove it from the shopping list.
+// Missing/non-bought voices are skipped. Returns the count moved.
+export async function boughtListItemsToPantry(moves) {
+  let moved = 0;
+  for (const m of moves) {
+    const v = await db.get('list', m.id);
+    if (!v || v.deleted === true) continue;
+    const qtyValue = m.qtyValue !== undefined ? m.qtyValue : v.qtyValue;
+    const qtyUnit = m.qtyUnit !== undefined ? m.qtyUnit : v.qtyUnit;
+    await addPantryBatch(m.location, v.productId, {
+      qtyValue,
+      qtyUnit,
+      expiry: m.expiry ?? null,
+    });
+    await discardListItem(m.id);
+    moved += 1;
+  }
+  return moved;
+}
+
 // ----- Pantry (§8) -----------------------------------------------------------
 
-export async function addPantryItem({ productId, location, qtyValue = null, qtyUnit = null, expiry = null }) {
-  const q = coerceQty(qtyValue, qtyUnit);
+// addPantryItem({ productId, location, batches = [] }) — low-level create primitive
+// in the BATCH model (§5.2). No merge with existing voices. Batches are normalized.
+export async function addPantryItem({ productId, location, batches = [] }) {
   const now = nowISO();
   const voice = {
     id: uid(),
     productId,
     location,
-    qtyValue: q.qtyValue,
-    qtyUnit: q.qtyUnit,
-    expiry,
+    batches: normalizeBatches(batches),
     createdAt: now,
     updatedAt: now,
     deleted: false,
@@ -420,10 +598,8 @@ export async function updatePantryItem(id, patch) {
   const v = await db.get('pantry', id);
   if (!v) throw new Error(`updatePantryItem: pantry item ${id} not found`);
   const next = { ...v, ...patch, id: v.id };
-  if ('qtyValue' in patch || 'qtyUnit' in patch) {
-    const q = coerceQty(next.qtyValue, next.qtyUnit);
-    next.qtyValue = q.qtyValue;
-    next.qtyUnit = q.qtyUnit;
+  if ('batches' in patch) {
+    next.batches = normalizeBatches(patch.batches);
   }
   next.updatedAt = nowISO();
   await db.put('pantry', next);
@@ -434,54 +610,136 @@ export async function removePantryItem(id) {
   await db.del('pantry', id);
 }
 
-// mergePantryQuantity (D1, §8) — UI-free structured result {merged, items[]}.
-export async function mergePantryQuantity(location, productId, qtyValue, qtyUnit) {
-  const q = coerceQty(qtyValue, qtyUnit);
-  const live = (await getAllPantry()).filter(
+// addPantryBatch(location, productId, batch) -> { merged, keptSeparate, separateReason, voice }
+//   Merge a single batch into the live voice for (productId, location) per §5.3.
+//   The live voice is resolved via getAllPantry() (ensureVoiceShape applied on-read), so
+//   existing.batches is always a canonical array. keptSeparate/merged compare against the
+//   normalized `base`; separateReason distinguishes 'unit' (same expiry, incompatible unit)
+//   from 'expiry' (new date).
+export async function addPantryBatch(location, productId, batch) {
+  const existing = (await getAllPantry()).find(
     (v) => v.productId === productId && v.location === location
   );
-  const existing = live[0];
 
-  // No existing live entry -> create.
   if (!existing) {
-    const created = await addPantryItem({ productId, location, qtyValue: q.qtyValue, qtyUnit: q.qtyUnit });
-    return { merged: false, items: [created] };
-  }
-
-  // Null-side handling: treat null as "unspecified"; use the non-null one.
-  if (existing.qtyValue == null || q.qtyValue == null) {
-    let newValue;
-    let newUnit;
-    if (existing.qtyValue == null && q.qtyValue == null) {
-      newValue = null;
-      newUnit = null;
-    } else if (existing.qtyValue == null) {
-      newValue = q.qtyValue;
-      newUnit = q.qtyUnit;
-    } else {
-      newValue = existing.qtyValue;
-      newUnit = existing.qtyUnit;
+    const normalized = normalizeBatches([batch]);
+    if (normalized.length === 0) {
+      // Null/zero batch on a non-existent voice -> create nothing.
+      return { merged: false, keptSeparate: false, separateReason: null, voice: null };
     }
-    const updated = await updatePantryItem(existing.id, { qtyValue: newValue, qtyUnit: newUnit });
-    return { merged: true, items: [updated] };
+    const created = await addPantryItem({ productId, location, batches: normalized });
+    return { merged: false, keptSeparate: false, separateReason: null, voice: created };
   }
 
-  // Both non-null -> try to combine.
-  const combined = combine(
-    { qtyValue: existing.qtyValue, qtyUnit: existing.qtyUnit },
-    { qtyValue: q.qtyValue, qtyUnit: q.qtyUnit }
-  );
-  if (combined.ok) {
-    const updated = await updatePantryItem(existing.id, {
-      qtyValue: combined.qtyValue,
-      qtyUnit: combined.qtyUnit,
-    });
-    return { merged: true, items: [updated] };
+  const base = normalizeBatches(existing.batches);
+  const next = normalizeBatches([...base, batch]);
+  const keptSeparate = next.length > base.length;
+  const merged = !keptSeparate;
+  const separateReason = keptSeparate
+    ? (base.some((b) => sameExpiry(b, batch)) ? 'unit' : 'expiry')
+    : null;
+
+  if (next.length === 0) {
+    await removePantryItem(existing.id);
+    return { merged, keptSeparate, separateReason, voice: null };
+  }
+  const updated = await updatePantryItem(existing.id, { batches: next });
+  return { merged, keptSeparate, separateReason, voice: updated };
+}
+
+// setPantryBatches(voiceId, rawBatches) -> { voice|null, removed } — editor save path (§5.3).
+// normalizeBatches is the sole arbiter; an empty result soft-deletes the voice.
+export async function setPantryBatches(voiceId, rawBatches) {
+  const v = await db.get('pantry', voiceId);
+  if (!v) throw new Error(`setPantryBatches: pantry item ${voiceId} not found`);
+  const next = normalizeBatches(rawBatches);
+  if (next.length === 0) {
+    await removePantryItem(voiceId);
+    return { voice: null, removed: true };
+  }
+  const updated = await updatePantryItem(voiceId, { batches: next });
+  return { voice: updated, removed: false };
+}
+
+// mergePantryQuantity(location, productId, qtyValue, qtyUnit, expiry = null)
+//   Compat adapter over addPantryBatch for existing callers (§5.3). Extended return:
+//   { merged, keptSeparate, separateReason, items }.
+export async function mergePantryQuantity(location, productId, qtyValue, qtyUnit, expiry = null) {
+  const r = await addPantryBatch(location, productId, { qtyValue, qtyUnit, expiry });
+  return {
+    merged: r.merged,
+    keptSeparate: r.keptSeparate,
+    separateReason: r.separateReason,
+    items: r.voice ? [r.voice] : [],
+  };
+}
+
+// movePantryBatches(sourceId, toLocation, selection) -> { moved, sourceRemoved, destVoice }
+//   Single-snapshot algorithm (§5.4). selection: null|'all' = wholesale; else
+//   Array<{index, qty?}> resolved ONCE against the snapshot before any mutation.
+export async function movePantryBatches(sourceId, toLocation, selection) {
+  const source = await db.get('pantry', sourceId);
+  if (!source) throw new Error(`movePantryBatches: pantry item ${sourceId} not found`);
+  if (toLocation === source.location) {
+    return { moved: 0, sourceRemoved: false, destVoice: source };
   }
 
-  // Incompatible units -> keep existing, add a second separate entry.
-  const newEntry = await addPantryItem({ productId, location, qtyValue: q.qtyValue, qtyUnit: q.qtyUnit });
-  return { merged: false, items: [existing, newEntry] };
+  // (a) read + normalize once.
+  const snap = normalizeBatches(ensureVoiceShape(source).batches);
+
+  // (b) resolve ALL selections against snap before mutating.
+  const moved = [];
+  const remaining = [];
+  if (selection == null || selection === 'all') {
+    for (const b of snap) moved.push({ ...b });
+  } else {
+    const picked = new Map(); // index -> qty
+    for (const s of selection) {
+      if (!s || typeof s.index !== 'number') continue;
+      if (s.index < 0 || s.index >= snap.length) continue;
+      if (picked.has(s.index)) continue;
+      picked.set(s.index, s.qty);
+    }
+    for (let i = 0; i < snap.length; i++) {
+      const b = snap[i];
+      if (!picked.has(i)) {
+        remaining.push({ ...b });
+        continue;
+      }
+      if (b.qtyValue == null) {
+        // Unknown quantity -> moved whole (qty ignored).
+        moved.push({ ...b });
+        continue;
+      }
+      const q = parseDecimal(picked.get(i));
+      if (q == null || q >= b.qtyValue) {
+        moved.push({ ...b }); // whole batch
+        continue;
+      }
+      const residual = round3(b.qtyValue - q);
+      moved.push({ qtyValue: q, qtyUnit: b.qtyUnit, expiry: b.expiry });
+      if (residual > 0) {
+        remaining.push({ qtyValue: residual, qtyUnit: b.qtyUnit, expiry: b.expiry });
+      }
+    }
+  }
+
+  // (c) apply to destination (standard merge rule).
+  for (const b of moved) {
+    await addPantryBatch(toLocation, source.productId, b);
+  }
+
+  // (d) rewrite the source once.
+  let sourceRemoved = false;
+  const next = normalizeBatches(remaining);
+  if (next.length === 0) {
+    await removePantryItem(sourceId);
+    sourceRemoved = true;
+  } else {
+    await updatePantryItem(sourceId, { batches: next });
+  }
+
+  return { moved: moved.length, sourceRemoved, destVoice: null };
 }
 
 // ----- Wishlist (§8) ---------------------------------------------------------

@@ -943,6 +943,104 @@ select {
   font-weight: 600;
 }
 
+/* ---------- Action bar group (Metti in dispensa + Svuota comprati) ---------- */
+.action-bar-group {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ---------- Put-away modal (bought items -> pantry) ---------- */
+.putaway-shortcuts {
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.putaway-shortcuts .chip-btn {
+  flex: 1 1 0;
+}
+
+.putaway-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.putaway-row {
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.putaway-row:last-child {
+  border-bottom: none;
+}
+
+.putaway-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.putaway-name-text {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.putaway-qty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.putaway-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.putaway-seg {
+  flex: 1 1 auto;
+}
+
+.putaway-add-date {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.putaway-add-date.active {
+  background: var(--brand-light);
+  color: var(--brand-dark);
+  border-color: var(--brand);
+}
+
+.putaway-qty-row {
+  margin-top: var(--sp-2);
+}
+
+.putaway-date-field {
+  margin-top: var(--sp-2);
+}
+
+.putaway-date-field[hidden] {
+  display: none;
+}
+
 /* ---------- Quick-pick bar (recurring shortcuts, shopping list) ---------- */
 .quickbar {
   margin-bottom: var(--sp-3);
@@ -1259,10 +1357,20 @@ select {
    title a flex row only in that case so the plain-text titles elsewhere keep
    their own ellipsis behaviour. */
 .row-title:has(.sev-icon),
+.row-title:has(.no-expiry-icon),
 .row-title.has-badges {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+}
+
+/* "No expiry" marker: faint and small so it reads at a glance without shouting. */
+.no-expiry-icon {
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0.4;
 }
 
 /* Cross-section presence badges (🛒 in spesa, 🧺 in dispensa, ⭐ nei desideri). */

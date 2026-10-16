@@ -23,6 +23,7 @@ import {
   clearBoughtListItems,
   listItemToPantry,
   listItemsToPantryMany,
+  boughtListItemsToPantry,
   getProductMembership,
 } from '../store.js';
 import {
@@ -64,9 +65,121 @@ export function render(container) {
     },
     '🧹 Svuota comprati'
   );
+  // --- "Metti in dispensa" bar button — appears with the bought items, next to
+  //     "Svuota comprati". Opens the put-away modal (option 3).
+  const putAwayBtn = el(
+    'button',
+    { type: 'button', class: 'btn-ghost put-away-btn', onClick: openPutAwayModal },
+    '🧺 Metti in dispensa'
+  );
   const selectBtn = el('button', { type: 'button', class: 'filter-chip', onClick: () => selection.enter() }, '☑️ Seleziona');
-  const actionBar = el('div', { class: 'action-bar between', hidden: true }, [selectBtn, clearBtn]);
+  const actionBar = el('div', { class: 'action-bar between', hidden: true }, [selectBtn, el('div', { class: 'action-bar-group' }, [putAwayBtn, clearBtn])]);
   container.appendChild(actionBar);
+
+  // --- Put-away modal (option 3): move all BOUGHT items into the pantry.
+  // Global shortcuts "Tutto in Frigo" / "Tutto in Dispensa"; per-row Frigo/Dispensa
+  // toggle (default dispensa); quantity inherited from the list (shown read-only);
+  // an optional, collapsed per-row "+ scadenza" date. Dates are usually set later
+  // in Dispensa, so they stay hidden until requested.
+  async function openPutAwayModal() {
+    const voices = (await getAllList()).filter((v) => v.bought === true);
+    if (voices.length === 0) {
+      toast('Nessun articolo comprato', 'info');
+      return;
+    }
+
+    // Build a per-row state + UI.
+    const rows = [];
+    const listWrap = el('div', { class: 'putaway-list' });
+
+    for (const v of voices) {
+      const product = await getProduct(v.productId);
+      const name = product ? product.name : '(prodotto eliminato)';
+      const state = { id: v.id, location: 'dispensa', expiry: null };
+
+      const frigoBtn = el('button', { type: 'button', class: 'segmented-btn' }, 'Frigo');
+      const dispensaBtn = el('button', { type: 'button', class: 'segmented-btn active' }, 'Dispensa');
+      function syncSeg() {
+        frigoBtn.classList.toggle('active', state.location === 'frigo');
+        dispensaBtn.classList.toggle('active', state.location === 'dispensa');
+      }
+      frigoBtn.addEventListener('click', () => { state.location = 'frigo'; syncSeg(); });
+      dispensaBtn.addEventListener('click', () => { state.location = 'dispensa'; syncSeg(); });
+
+      // Collapsed expiry: a "+ scadenza" toggle that reveals a date input.
+      const dateInput = el('input', { type: 'date', class: 'input putaway-date', 'aria-label': 'Scadenza' });
+      dateInput.addEventListener('change', () => { state.expiry = dateInput.value || null; });
+      const dateField = el('div', { class: 'putaway-date-field', hidden: true }, [dateInput]);
+      const addDateBtn = el(
+        'button',
+        {
+          type: 'button',
+          class: 'putaway-add-date',
+          onClick: () => {
+            const show = dateField.hidden;
+            dateField.hidden = !show;
+            addDateBtn.classList.toggle('active', show);
+            if (!show) { dateInput.value = ''; state.expiry = null; }
+          },
+        },
+        '+ scadenza'
+      );
+
+      const nameLine = el('div', { class: 'putaway-name' }, [
+        el('span', { class: 'putaway-name-text' }, name),
+      ]);
+
+      // Editable quantity, pre-filled with the value inherited from the list.
+      const qty = qtyEditor({ value: v.qtyValue, unit: v.qtyUnit });
+
+      const row = el('div', { class: 'putaway-row' }, [
+        nameLine,
+        el('div', { class: 'putaway-controls' }, [
+          el('div', { class: 'segmented segmented-inline putaway-seg' }, [frigoBtn, dispensaBtn]),
+          addDateBtn,
+        ]),
+        el('div', { class: 'putaway-qty-row' }, [qty.element]),
+        dateField,
+      ]);
+      rows.push({ state, syncSeg, readQty: qty.read });
+      listWrap.appendChild(row);
+    }
+
+    // Global shortcuts.
+    const allFrigoBtn = el('button', { type: 'button', class: 'btn chip-btn', onClick: () => {
+      for (const r of rows) { r.state.location = 'frigo'; r.syncSeg(); }
+    } }, '❄️ Tutto in Frigo');
+    const allDispBtn = el('button', { type: 'button', class: 'btn chip-btn', onClick: () => {
+      for (const r of rows) { r.state.location = 'dispensa'; r.syncSeg(); }
+    } }, '🧺 Tutto in Dispensa');
+
+    const content = el('div', {}, [
+      el('div', { class: 'putaway-shortcuts' }, [allFrigoBtn, allDispBtn]),
+      listWrap,
+    ]);
+
+    openModal({
+      title: 'Metti in dispensa',
+      content,
+      actions: [
+        { label: 'Annulla', onClick: (close) => close() },
+        {
+          label: 'Conferma',
+          primary: true,
+          onClick: async (close) => {
+            const moves = rows.map((r) => {
+              const { qtyValue, qtyUnit } = r.readQty();
+              return { id: r.state.id, location: r.state.location, expiry: r.state.expiry, qtyValue, qtyUnit };
+            });
+            const n = await boughtListItemsToPantry(moves);
+            haptic(15);
+            close();
+            toast(n > 0 ? `Spostati ${n} in dispensa` : 'Niente da spostare', 'success');
+          },
+        },
+      ],
+    });
+  }
 
   // --- Selection action bar ---
   const selCount = el('span', { class: 'sel-count' }, '0 selezionati');
@@ -344,8 +457,10 @@ export function render(container) {
       if (!where) return;
       const location = where === 'Frigo' ? 'frigo' : 'dispensa';
       const result = await listItemToPantry(voice.id, location);
-      if (result && result.merged === false && result.items.length === 2) {
-        toast('Unità diverse: tengo le voci separate', 'info');
+      if (result && result.keptSeparate) {
+        toast(result.separateReason === 'expiry'
+          ? 'Scadenza diversa: tengo i lotti separati'
+          : 'Unità diverse: tengo i lotti separati', 'info');
       } else {
         toast('Aggiunto in dispensa', 'success');
       }
@@ -453,6 +568,7 @@ export function render(container) {
     // "Svuota comprati"/"Seleziona" bar: shown when there are items and NOT selecting.
     const hasBought = voices.some((v) => v.bought === true);
     clearBtn.hidden = !hasBought;
+    putAwayBtn.hidden = !hasBought;
     actionBar.hidden = selection.isActive() || voices.length === 0;
 
     listEl.textContent = '';
