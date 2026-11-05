@@ -117,37 +117,52 @@ async function main() {
   }
 
   // 5) Auth-state handler — the SOLE fullSync driver for login.
-  onAuthStateChange(async (event, session) => {
+  // IMPORTANT: this callback must NOT be async and must NOT await any Supabase
+  // call directly. supabase-js runs the onAuthStateChange handler while holding
+  // the auth lock; awaiting getSession()/from() (which sync.* does) inside it
+  // deadlocks the client — signInWithPassword() then never resolves, so the
+  // login modal's doSignIn() never reaches close() and stays open "as if nothing
+  // happened". We therefore defer the sync/sync-dependent work to a detached
+  // microtask (setTimeout 0) so the callback returns immediately and the lock is
+  // released. See https://supabase.com/kb/troubleshooting/why-is-my-supabase-api-call-not-returning-PGzXw0
+  onAuthStateChange((event, session) => {
     updateChip(session);
 
     if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
-      // Sync must never block the UI refresh: even if it throws (server down,
-      // tables missing), we still reflect the new session in the view below.
-      try {
-        const prev = await getMeta('lastSyncUser');
-        if (prev != null && prev !== session.user.id) {
-          // Account switch: clear domain stores + reset cursors + set lastSyncUser, THEN fullSync.
-          await sync.switchAccount(session.user.id); // runs fullSync internally
-        } else {
-          await setMeta('lastSyncUser', session.user.id);
-          await sync.fullSync();
+      // Deferred: do NOT await Supabase here (see note above).
+      setTimeout(async () => {
+        // Sync must never block the UI refresh: even if it throws (server down,
+        // tables missing), we still reflect the new session in the view below.
+        try {
+          const prev = await getMeta('lastSyncUser');
+          if (prev != null && prev !== session.user.id) {
+            // Account switch: clear domain stores + reset cursors + set lastSyncUser, THEN fullSync.
+            await sync.switchAccount(session.user.id); // runs fullSync internally
+          } else {
+            await setMeta('lastSyncUser', session.user.id);
+            await sync.fullSync();
+          }
+          // Keep a shared account fresh with the periodic auto-pull.
+          sync.startAutoPull();
+        } catch (e) {
+          console.warn('auth SIGNED_IN sync failed', e);
         }
-        // Keep a shared account fresh with the periodic auto-pull.
-        sync.startAutoPull();
-      } catch (e) {
-        console.warn('auth SIGNED_IN sync failed', e);
-      }
-      // Re-render the current section + badges so a fresh login is reflected
-      // immediately, even if the pull brought no new rows (no db.onChange fired)
-      // or the sync failed above.
-      refreshRoute();
-      refreshBadges();
+        // Re-render the current section + badges so a fresh login is reflected
+        // immediately, even if the pull brought no new rows (no db.onChange fired)
+        // or the sync failed above.
+        refreshRoute();
+        refreshBadges();
+      }, 0);
     } else if (event === 'SIGNED_OUT') {
-      // Keep local data/cursors; leave lastSyncUser. Stop polling, flag offline.
-      sync.stopAutoPull();
-      renderStatus({ status: 'offline' });
-      refreshRoute();
-      refreshBadges();
+      // Deferred for symmetry/safety: stopAutoPull is lock-free, but keep the
+      // handler itself free of any Supabase await.
+      setTimeout(() => {
+        // Keep local data/cursors; leave lastSyncUser. Stop polling, flag offline.
+        sync.stopAutoPull();
+        renderStatus({ status: 'offline' });
+        refreshRoute();
+        refreshBadges();
+      }, 0);
     }
   });
 
