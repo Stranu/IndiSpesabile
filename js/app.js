@@ -11,6 +11,8 @@ import { render as renderSpesa } from './views/spesa.js';
 import { render as renderDispensa } from './views/dispensa.js';
 import { render as renderDesideri } from './views/desideri.js';
 import { render as renderProdotti } from './views/prodotti.js';
+import { render as renderStrumenti } from './views/strumenti.js';
+import { render as renderStrumentiPorzioni } from './views/strumenti-porzioni.js';
 import { render as renderAuth } from './views/auth.js';
 import { render as renderOtherServices } from './views/other-services.js';
 
@@ -34,7 +36,8 @@ async function main() {
   // 2) Register the service worker + wire SKIP_WAITING auto-update.
   registerServiceWorker();
 
-  // 3) Start the router with the four section render fns; default '#/spesa'.
+  // 3) Start the router with the section render fns; default '#/spesa'.
+  //    '/desideri' stays registered but is not in the nav (reached from Prodotti > Desideri).
   const mount = document.getElementById('view');
   startRouter(
     {
@@ -42,6 +45,8 @@ async function main() {
       '/dispensa': renderDispensa,
       '/desideri': renderDesideri,
       '/prodotti': renderProdotti,
+      '/strumenti': renderStrumenti,
+      '/strumenti/porzioni': renderStrumentiPorzioni,
     },
     { mount }
   );

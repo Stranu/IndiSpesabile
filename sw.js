@@ -5,7 +5,7 @@
  * both the §2 import graph and this PRECACHE array AND bumping CACHE_NAME.
  */
 
-const CACHE_NAME = 'spesa-cache-v34';
+const CACHE_NAME = 'spesa-cache-v35';
 
 const PRECACHE = [
   './',
@@ -22,6 +22,9 @@ const PRECACHE = [
   './js/router.js',
   './js/ui.js',
   './js/units.js',
+  './js/porzioni.js',
+  './js/views/strumenti.js',
+  './js/views/strumenti-porzioni.js',
   './js/views/spesa.js',
   './js/views/dispensa.js',
   './js/views/desideri.js',

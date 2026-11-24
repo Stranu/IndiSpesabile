@@ -1,10 +1,13 @@
 // js/router.js — hash-based routing (design §10).
-// Routes: '#/spesa' (default), '#/dispensa', '#/desideri', '#/prodotti'.
+// Routes: '#/spesa' (default), '#/dispensa', '#/prodotti', '#/strumenti',
+// '#/strumenti/porzioni' and '#/desideri' (not in the nav; highlights Prodotti).
 // Each view module exports render(container) -> { destroy }.
 
 import { el } from './ui.js';
 
 const DEFAULT_ROUTE = '/spesa';
+// Routes outside the nav that highlight another nav button.
+const NAV_ALIAS = { '/desideri': '/prodotti' };
 
 let _routes = null;
 let _mount = null;
@@ -56,7 +59,9 @@ function updateNav(path) {
   const buttons = document.querySelectorAll('.nav-btn');
   buttons.forEach((btn) => {
     const route = btn.getAttribute('data-route');
-    btn.classList.toggle('active', route === path);
+    // Sub-routes ('/strumenti/porzioni') and aliases ('/desideri' -> Prodotti) keep their section active.
+    const active = route === path || path.startsWith(route + '/') || NAV_ALIAS[path] === route;
+    btn.classList.toggle('active', active);
   });
 }
 

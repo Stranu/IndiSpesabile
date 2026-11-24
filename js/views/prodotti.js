@@ -1,5 +1,5 @@
 // js/views/prodotti.js — Catalog view (design §8, decision D2).
-// Search bar (filters the catalog) + 'Solo ricorrenti' chip. Add a product via the
+// Search bar (filters the catalog) + 'Solo ricorrenti' and 'Desideri' (= wishlist) chips. Add a product via the
 // floating "+". Single-item actions via the row kebab; multi-select mode (long-press
 // a row or tap "Seleziona") enables bulk add-to-list / wishlist / recurring / delete.
 // All Italian.
@@ -20,7 +20,10 @@ import {
   updateProduct,
   getOrCreateProduct,
   getProductMembership,
+  getAllWishlist,
+  removeWishlistItem,
 } from '../store.js';
+import { navigate } from '../router.js';
 import {
   el, toast, openSheet, openChoice, confirmSheet, openModal, openRenameProduct, fab,
   selectionController, attachLongPress, swipeRow, membershipBadges, detailEditButton,
@@ -29,6 +32,7 @@ import {
 export function render(container) {
   let query = '';
   let onlyRecurring = false;
+  let onlyWishlist = false; // "Desideri" = products in the wishlist
   let lastRendered = []; // products currently shown (for "seleziona tutti")
   let membership = null; // cross-section presence (loaded per render)
   const longPressDetachers = [];
@@ -67,6 +71,27 @@ export function render(container) {
     '🔁 Solo ricorrenti'
   );
 
+  const wishLink = el(
+    'button',
+    { type: 'button', class: 'btn-ghost', hidden: true, onClick: () => navigate('/desideri') },
+    'Apri lista desideri ›'
+  );
+  const wishChip = el(
+    'button',
+    {
+      type: 'button',
+      class: 'filter-chip',
+      'aria-pressed': 'false',
+      onClick: () => {
+        onlyWishlist = !onlyWishlist;
+        wishChip.classList.toggle('active', onlyWishlist);
+        wishChip.setAttribute('aria-pressed', String(onlyWishlist));
+        wishLink.hidden = !onlyWishlist;
+        renderList();
+      },
+    },
+    '⭐ Desideri'
+  );
   const selectBtn = el(
     'button',
     { type: 'button', class: 'filter-chip', onClick: () => selection.enter() },
@@ -75,7 +100,8 @@ export function render(container) {
 
   const controls = el('div', { class: 'search-bar' }, [
     el('div', { class: 'search-row' }, [searchInput]),
-    el('div', { class: 'filter-row' }, [recurringChip, selectBtn]),
+    el('div', { class: 'filter-row' }, [recurringChip, wishChip, selectBtn]),
+    wishLink,
   ]);
 
   // --- Selection action bar (shown only in selection mode) ---
@@ -237,7 +263,9 @@ export function render(container) {
       title: product.name,
       items: [
         { label: 'Aggiungi alla spesa', icon: '🛒', value: 'toList' },
-        { label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' },
+        membership && membership.inWishlist.has(product.id)
+          ? { label: 'Rimuovi dai desideri', icon: '⭐', value: 'unWish' }
+          : { label: 'Aggiungi ai desideri', icon: '⭐', value: 'toWish' },
         { label: 'Aggiungi alla dispensa', icon: '🧺', value: 'toPantry' },
         { label: product.recurring ? 'Togli dai ricorrenti' : 'Aggiungi ai ricorrenti', icon: '🔁', value: 'recurring' },
         { label: 'Modifica', icon: '✏️', value: 'rename' },
@@ -254,6 +282,10 @@ export function render(container) {
     } else if (choice === 'toWish') {
       await ensureWishlistRef(product.id);
       toast('Aggiunto ai desideri', 'success');
+    } else if (choice === 'unWish') {
+      const items = (await getAllWishlist()).filter((w) => w.productId === product.id);
+      for (const w of items) await removeWishlistItem(w.id);
+      toast('Rimosso dai desideri', 'success');
     } else if (choice === 'toPantry') {
       const where = await openChoice('Frigo o Dispensa?', ['Frigo', 'Dispensa']);
       if (!where) return;
@@ -388,13 +420,14 @@ export function render(container) {
     const q = normalizeName(query);
     if (q !== '') products = products.filter((p) => p.nameLower.includes(q));
     if (onlyRecurring) products = products.filter((p) => p.recurring === true);
+    if (onlyWishlist) products = products.filter((p) => membership.inWishlist.has(p.id));
 
     products.sort((a, b) => a.name.localeCompare(b.name, 'it'));
     lastRendered = products;
 
     listEl.textContent = '';
     if (products.length === 0) {
-      const emptyMsg = query || onlyRecurring ? 'Nessun prodotto trovato.' : 'Nessun prodotto.';
+      const emptyMsg = query || onlyRecurring || onlyWishlist ? 'Nessun prodotto trovato.' : 'Nessun prodotto.';
       listEl.appendChild(
         el('div', { class: 'empty' }, [
           el('div', { class: 'empty-icon', 'aria-hidden': 'true' }, '📋'),
