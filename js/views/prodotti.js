@@ -182,6 +182,7 @@ export function render(container) {
 
   // --- Add product: name + 'Ricorrente' flag ---
   function openAddProduct() {
+    const wish = onlyWishlist; // chip Desideri attivo: l'elemento va anche nei desideri
     const nameInput = el('input', {
       type: 'text',
       class: 'input',
@@ -203,7 +204,7 @@ export function render(container) {
     const content = el('div', {}, [nameWrap, recurringLabel]);
 
     openModal({
-      title: 'Nuovo prodotto',
+      title: wish ? 'Aggiungi ai desideri' : 'Nuovo prodotto',
       content,
       actions: [
         { label: 'Annulla', onClick: (close) => close() },
@@ -220,8 +221,9 @@ export function render(container) {
             if (recurringCheck.checked && product.recurring !== true) {
               await toggleRecurring(product.id);
             }
+            if (wish) await ensureWishlistRef(product.id);
             close();
-            toast('Prodotto aggiunto', 'success');
+            toast(wish ? 'Aggiunto ai desideri' : 'Prodotto aggiunto', 'success');
           },
         },
       ],
@@ -427,12 +429,13 @@ export function render(container) {
 
     listEl.textContent = '';
     if (products.length === 0) {
-      const emptyMsg = query || onlyRecurring || onlyWishlist ? 'Nessun prodotto trovato.' : 'Nessun prodotto.';
+      const filtered = query || onlyRecurring;
+      const emptyMsg = onlyWishlist && !filtered ? 'Nessun desiderio. Tocca + per aggiungerne uno.' : filtered ? 'Nessun prodotto trovato.' : 'Nessun prodotto.';
       listEl.appendChild(
         el('div', { class: 'empty' }, [
           el('div', { class: 'empty-icon', 'aria-hidden': 'true' }, '📋'),
           el('p', {}, emptyMsg),
-          el('button', { type: 'button', class: 'btn btn-primary', onClick: openAddProduct }, 'Aggiungi un prodotto'),
+          el('button', { type: 'button', class: 'btn btn-primary', onClick: openAddProduct }, onlyWishlist ? 'Aggiungi un desiderio' : 'Aggiungi un prodotto'),
         ])
       );
       return;
