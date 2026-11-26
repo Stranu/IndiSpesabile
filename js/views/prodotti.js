@@ -23,7 +23,6 @@ import {
   getAllWishlist,
   removeWishlistItem,
 } from '../store.js';
-import { navigate } from '../router.js';
 import {
   el, toast, openSheet, openChoice, confirmSheet, openModal, openRenameProduct, fab,
   selectionController, attachLongPress, swipeRow, membershipBadges, detailEditButton,
@@ -71,11 +70,6 @@ export function render(container) {
     '🔁 Solo ricorrenti'
   );
 
-  const wishLink = el(
-    'button',
-    { type: 'button', class: 'btn-ghost', hidden: true, onClick: () => navigate('/desideri') },
-    'Apri lista desideri ›'
-  );
   const wishChip = el(
     'button',
     {
@@ -86,7 +80,6 @@ export function render(container) {
         onlyWishlist = !onlyWishlist;
         wishChip.classList.toggle('active', onlyWishlist);
         wishChip.setAttribute('aria-pressed', String(onlyWishlist));
-        wishLink.hidden = !onlyWishlist;
         renderList();
       },
     },
@@ -101,7 +94,6 @@ export function render(container) {
   const controls = el('div', { class: 'search-bar' }, [
     el('div', { class: 'search-row' }, [searchInput]),
     el('div', { class: 'filter-row' }, [recurringChip, wishChip, selectBtn]),
-    wishLink,
   ]);
 
   // --- Selection action bar (shown only in selection mode) ---
